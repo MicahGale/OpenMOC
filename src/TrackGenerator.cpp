@@ -858,16 +858,24 @@ void TrackGenerator::initializeTracks() {
   double* dy_eff = new double[_num_azim_2];
   double* d_eff = new double[_num_azim_2];
 
-  double x1, x2;
+  double x1, x2,nx,ny,ts,tsx, tsy;
   double width_x = _geometry->getWidthX();
   double width_y = _geometry->getWidthY();
+  
+  /*Finds the least amount tracks possible*/
+  tsx = sqrt(2)/2*_azim_spacing; 
+  tsy = tsx;
+  
+  /* finds the index for the 45 deg angle */
+  int middle = (int) (_num_azim_2/4) + 1;
+  _num_x[middle] = (int) ceil(width_x / tsx);
+  _num_y[middle] = (int) ceil(width_y / tsy);
+
+  _num_tracks[middle] = _num_x[middle] + _num_y[middle];
+
 
   /* Determine azimuthal angles and track spacing */
   for (int i = 0; i < _num_azim_2/2; i++) {
-
-    /* A desired azimuthal angle for the user-specified number of
-     * azimuthal angles */
-    double phi = M_PI / _num_azim_2 * (0.5 + i);
 
     /* The number of intersections with x,y-axes */
     _num_x[i] = (int) (fabs(width_x / _azim_spacing * sin(phi))) + 1;
@@ -876,13 +884,8 @@ void TrackGenerator::initializeTracks() {
     /* Total number of Tracks */
     _num_tracks[i] = _num_x[i] + _num_y[i];
 
-    /* Effective/actual angle (not the angle we desire, but close) */
-    phi = atan((width_y * _num_x[i]) / (width_x * _num_y[i]));
     _quadrature->setPhi(phi, i);
 
-    /* Effective Track spacing (not spacing we desire, but close) */
-    dx_eff[i] = width_x / _num_x[i];
-    dy_eff[i] = width_y / _num_y[i];
     d_eff[i] = dx_eff[i] * sin(phi);
     _quadrature->setAzimSpacing(d_eff[i], i);
 
@@ -947,6 +950,105 @@ void TrackGenerator::initializeTracks() {
   delete [] d_eff;
 }
 
+/**
+ *@brief Stores points of angle v. tracks for the goal parabola
+ *@detail There are many combinations of nx and ny that give the same
+ *        angle, but vast different number of tracks. Therefore 
+ *        it is desirable to see how close to optimal a combination is.
+ *        This creates a parabola relating angle and numbers of tracks.
+ *        The points used are: the minimum number of tracks possible to
+ *        achieve pi/4 and meet the needed track spacing. The other points
+ *        used are the reasonable shallowest, and steepest angles possible.
+ *        This is done by diving the whole angular space (2pi) into
+ *        the desired number of angles. The ones nearest 0 and pi/2 are taken
+ *        These are then modified until they are cyclic.
+ */
+void TrackGenerator::calculatePenaltyParabola() {
+  double tsx,tsy, phi;
+  int middle, nx, ny;
+  _goal_interp_x = new double[3];
+  _goal_interp_y = new double[3];
+  
+  /*Finds the least amount tracks possible*/
+  tsx = sqrt(2)/2*_azim_spacing; 
+  tsy = tsx;
+  
+  /* finds the index for the 45 deg angle */
+  middle = (int) (_num_azim_2/4) + 1;
+  _num_x[middle] = (int) ceil(width_x / tsx);
+  _num_y[middle] = (int) ceil(width_y / tsy);
+
+  /* saves middle angle track numbers */
+  _num_tracks[middle] = _num_x[middle] + _num_y[middle];
+  _goal_interp_y[1] = _num_tracks[middle];
+  _goal_interp_x[1] = atan(tsy/tsx);
+  _quadrature->setPhi(_goal_interp_x[i],middle);
+
+  /* calculates the shallowest and steepest reasonable angle*/
+  double* angle_multi = {0.5, _num_azim_2/2-0.5};
+  int* interp_pointers = {0, 2};
+  
+  for (int i = 0; i< 2; i++) {
+    phi = M_PI/_num_azim_2 * angle_multi[i];
+    nx = (int) (fabs(width_x / _azim_spacing * sin(phi))) + 1;
+    ny = (int) (fabs(width_y / _azim_spacing * cos(phi))) + 1;
+    _goal_interp_y[interp_pointers[i]] = nx + ny;
+    /* Squash the angle into being cyclic */
+    phi = atan((_geometry->width_x * _num_x[i]) / 
+        (_geometry->width_y * _num_y[i]));
+    _goal_interp_x[interp_pointers[i]] = phi;
+  }
+}
+
+/**
+ * @brief TODO
+ *
+ */
+double TrackGenerator::calcPenalty(int nx, int ny) {
+  double a, b, c, fa, fb, fc, phi, goal, num_tracks;
+  
+  a = _goal_interp_x[0];
+  fa = _goal_interp_y[0];
+
+  b = _goal_interp_x[1];
+  fb = _goal_interp_y[1];
+
+  c = _goal_interp_x[2];
+  fc = _goal_interp_y[2];
+
+  /** Calculates angle and number of tracks */
+  phi = atan((_geometry->width_y*nx)/(_geometry->width_x*ny));
+  num_tracks = nx + ny;
+  
+  /* Calculates how many tracks should be created ideally 
+   * using parabola interpolation */
+  goal = fa*((phi-b)*(phi-c))/((a-b)*(a-c)) +
+         fb*((phi-c)*(phi-a))/((b-c)*(b-a)) + 
+         fc*((phi-a)*(phi-b))/((c-a)*(c-b));
+
+  return (num_tracks-goal)/goal; 
+  
+
+
+}
+/**
+ * @brief Calculates the track spacing for the given nx, ny
+ * @details This method calculates how widely the tracks are
+ *          spaced with the number of tracks on x and y for the 
+ *          given geometry
+ * @param nx the number of tracks in the x-direction
+ * @param ny the number of tracks int he y-direction
+ * @returns The Track spacing in cm for the specified nx and ny.
+ *
+ */
+double TrackGenerator::calcTrackSpacing(int nx, int ny) {
+  double tsx, tsy;
+
+  tsx = _geometry->getWidthX()/nx;
+  tsy = _geometry->getWidthY()/ny;
+
+  return t_s_x*t_s_y/sqrt(pow(t_s_x,2),pow(t_s_y,2));
+}
 
 /**
  * @brief Recalibrates Track start and end points to the origin of the Geometry.

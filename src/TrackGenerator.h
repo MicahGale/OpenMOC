@@ -103,6 +103,10 @@ protected:
   /** A buffer holding the computed FSR volumes */
   FP_PRECISION* _FSR_volumes;
 
+  /** The Parameters for a parabola predicting the number of tracks per angle */
+  double* _goal_interp_x;
+  double* _goal_interp_y;
+
   void computeEndPoint(Point* start, Point* end,  const double phi,
                        const double width_x, const double width_y);
 
@@ -120,7 +124,9 @@ protected:
   void clearTimerSplits();
   void calculateFSRVolumes();
   void resetStatus();
-
+  double calcTrackSpacing(int nx, int ny);
+  void calculatePenaltyParabola();
+  double calcPenalty(int nx, int ny);
 public:
 
   TrackGenerator(Geometry* geometry, int num_azim, double azim_spacing);
