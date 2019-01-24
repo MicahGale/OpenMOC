@@ -858,44 +858,73 @@ void TrackGenerator::initializeTracks() {
   double* dy_eff = new double[_num_azim_2];
   double* d_eff = new double[_num_azim_2];
 
-  double x1, x2,nx,ny,ts,tsx, tsy;
   double width_x = _geometry->getWidthX();
   double width_y = _geometry->getWidthY();
+
+  int len_test_arrays = 21;
+  double* penalties = new double[len_test_arrays];
+  int* test_nx = new int[len_test_arrays];
+  int* test_ny = new int[len_test_arrays];
   
-  /*Finds the least amount tracks possible*/
-  tsx = sqrt(2)/2*_azim_spacing; 
-  tsy = tsx;
+  double x1, x2, min_penalty, min_j, nx, ny, prev_phi, prev_ratio,
+         phi, ts, tsx, tsy, target_w, w_penalty,
+         w_mult ,track_mult, track_penalty;
   
-  /* finds the index for the 45 deg angle */
-  int middle = (int) (_num_azim_2/4) + 1;
-  _num_x[middle] = (int) ceil(width_x / tsx);
-  _num_y[middle] = (int) ceil(width_y / tsy);
+  int prev_nx, prev_ny, new_angle_pntr, middle;
+  
+  middle = (int) (_num_azim_2/4) + 1; 
+  w_mult = 1.0;
+  track_mult = 1.0;
+  
+  prev_nx = _num_x[middle];
+  prev_ny = _num_y[middle];
+  prev_ratio = 1.0;
 
-  _num_tracks[middle] = _num_x[middle] + _num_y[middle];
+  /* Calculates the ideal width between angles */
+  target_w = M_PI / _num_azim_2;
 
+  /* Determine azimuthal angles and track spacing for ϴ < π/4 */
+  for (int i = middle; i >= 0; i--) {
+    
+    /*Resets loops vars for next angle */
+    new_angle_pntr = 0;
+    for ( int j = 0; j < len_test_arrays; j++) {
+      test_nx[j] = 0;
+      test_ny[j] = 0;
+    }
 
-  /* Determine azimuthal angles and track spacing */
-  for (int i = 0; i < _num_azim_2/2; i++) {
+    /* Creates possible angles which will be compared */
+    for ( int j = prev_nx; j < prev_nx + 5; j++) {
+      for ( int k = j + 1; k < prev_ny + 6; k++) {
 
-    /* The number of intersections with x,y-axes */
-    _num_x[i] = (int) (fabs(width_x / _azim_spacing * sin(phi))) + 1;
-    _num_y[i] = (int) (fabs(width_y / _azim_spacing * cos(phi))) + 1;
+        /* Don't waste time on going backwards */
+        if ( j/k < prev_ratio ) {
+          test_nx[new_angle_pntr] = j;
+          test_ny[new_angle_pntr] = k;
+          phi = atan(width_y*j/(width_x*k));
 
-    /* Total number of Tracks */
-    _num_tracks[i] = _num_x[i] + _num_y[i];
+          /*Calculates the penalties (merits & demerits) for new angle */
+          w_penalty = (abs(phi - prev_phi) - target_w) / target_w;
+          track_penalty = this->calcPenalty(j, k);
+          penalties[new_angle_pntr] = w_mult * w_penalty +
+                                     track_mult * track_penalty;
 
-    _quadrature->setPhi(phi, i);
-
-    d_eff[i] = dx_eff[i] * sin(phi);
-    _quadrature->setAzimSpacing(d_eff[i], i);
-
-    /* Set attributes for complimentary angles */
-    _num_x[_num_azim_2-i-1] = _num_x[i];
-    _num_y[_num_azim_2-i-1] = _num_y[i];
-    _num_tracks[_num_azim_2-i-1] = _num_tracks[i];
-    dx_eff[_num_azim_2-i-1] = dx_eff[i];
-    dy_eff[_num_azim_2-i-1] = dy_eff[i];
-    d_eff[_num_azim_2-i-1] = d_eff[i];
+          /*Move to next angel */
+          prev_phi = phi;
+          new_angle_pntr++;
+        }
+      }
+    }
+    min_penalty = 100000;
+    for (int j = 0; j < len_test_arrays; j++) {
+      if (penalties[j] < min_penalty) {
+        min_penalty = penalties[j];
+        min_j = j;
+      }
+      _num_x[i] = test_nx[j];
+      _num_y[i] = test_ny[j];
+      _quadrature->setPhi(atan(width_y* _num_x[i] / (width_x* _num_y[i])), i);
+    }
   }
 
   log_printf(INFO, "Generating Track start and end points...");
@@ -975,34 +1004,39 @@ void TrackGenerator::calculatePenaltyParabola() {
   
   /* finds the index for the 45 deg angle */
   middle = (int) (_num_azim_2/4) + 1;
-  _num_x[middle] = (int) ceil(width_x / tsx);
-  _num_y[middle] = (int) ceil(width_y / tsy);
+  _num_x[middle] = (int) ceil(_geometry->getWidthX() / tsx);
+  _num_y[middle] = (int) ceil(_geometry->getWidthY() / tsy);
 
   /* saves middle angle track numbers */
   _num_tracks[middle] = _num_x[middle] + _num_y[middle];
   _goal_interp_y[1] = _num_tracks[middle];
   _goal_interp_x[1] = atan(tsy/tsx);
-  _quadrature->setPhi(_goal_interp_x[i],middle);
+  _quadrature->setPhi(_goal_interp_x[1],middle);
 
   /* calculates the shallowest and steepest reasonable angle*/
-  double* angle_multi = {0.5, _num_azim_2/2-0.5};
-  int* interp_pointers = {0, 2};
+  double angle_multi[] = {0.5, _num_azim_2/2-0.5};
+  int interp_pointers[] = {0, 2};
   
   for (int i = 0; i< 2; i++) {
     phi = M_PI/_num_azim_2 * angle_multi[i];
-    nx = (int) (fabs(width_x / _azim_spacing * sin(phi))) + 1;
-    ny = (int) (fabs(width_y / _azim_spacing * cos(phi))) + 1;
+    nx = (int) (fabs(_geometry->getWidthX() / _azim_spacing * sin(phi))) + 1;
+    ny = (int) (fabs(_geometry->getWidthY() / _azim_spacing * cos(phi))) + 1;
     _goal_interp_y[interp_pointers[i]] = nx + ny;
     /* Squash the angle into being cyclic */
-    phi = atan((_geometry->width_x * _num_x[i]) / 
-        (_geometry->width_y * _num_y[i]));
+    phi = atan((_geometry->getWidthY() * _num_x[i]) / 
+        (_geometry->getWidthX() * _num_y[i]));
     _goal_interp_x[interp_pointers[i]] = phi;
   }
 }
 
 /**
- * @brief TODO
- *
+ * @brief Calculates the penalty  for the number based on the number of tracks.
+ * @detail Finds where this track combination sits on the penalty parabola created from 
+  *               calculatePenaltyParabola(). Gives the deviation from the parabola as a percentage
+  * @param nx: the number of tracks on the x-side of the box
+  * @param ny: the number of tracks on the y-side
+ * @returns  The deviation from the parabola in number of tracks as a unitiless quantiy.
+ *                    Positive if more tracks than optimal, negative if less tracks than "optimal".
  */
 double TrackGenerator::calcPenalty(int nx, int ny) {
   double a, b, c, fa, fb, fc, phi, goal, num_tracks;
@@ -1017,7 +1051,7 @@ double TrackGenerator::calcPenalty(int nx, int ny) {
   fc = _goal_interp_y[2];
 
   /** Calculates angle and number of tracks */
-  phi = atan((_geometry->width_y*nx)/(_geometry->width_x*ny));
+  phi = atan((_geometry->getWidthY()*nx)/(_geometry->getWidthX()*ny));
   num_tracks = nx + ny;
   
   /* Calculates how many tracks should be created ideally 
@@ -1047,7 +1081,7 @@ double TrackGenerator::calcTrackSpacing(int nx, int ny) {
   tsx = _geometry->getWidthX()/nx;
   tsy = _geometry->getWidthY()/ny;
 
-  return t_s_x*t_s_y/sqrt(pow(t_s_x,2),pow(t_s_y,2));
+  return tsx*tsy/sqrt(pow(tsx,2.0)+pow(tsy,2.0));
 }
 
 /**
