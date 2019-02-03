@@ -870,8 +870,9 @@ void TrackGenerator::initializeTracks() {
          phi, ts, tsx, tsy, target_w, w_penalty,
          w_mult ,track_mult, track_penalty;
   
-  int prev_nx, prev_ny, new_angle_pntr, middle;
-  
+  int i, min_j, prev_nx, prev_ny, prev_j, prev_k, new_angle_pntr, middle, x, y;
+ 
+  this -> calculatePenaltyParabola();
   middle = (int) (_num_azim_2/4) + 1; 
   w_mult = 1.0;
   track_mult = 1.0;
@@ -993,11 +994,13 @@ void TrackGenerator::initializeTracks() {
  *        These are then modified until they are cyclic.
  */
 void TrackGenerator::calculatePenaltyParabola() {
-  double tsx,tsy, phi;
+  double tsx,tsy, phi, width_x, width_y;
   int middle, nx, ny;
   _goal_interp_x = new double[3];
   _goal_interp_y = new double[3];
-  
+ 
+  width_x = _geometry -> getWidthX();
+  width_y = _geometry -> getWidthY();
   /*Finds the least amount tracks possible*/
   tsx = sqrt(2)/2*_azim_spacing; 
   tsy = tsx;
@@ -1019,12 +1022,13 @@ void TrackGenerator::calculatePenaltyParabola() {
   
   for (int i = 0; i< 2; i++) {
     phi = M_PI/_num_azim_2 * angle_multi[i];
-    nx = (int) (fabs(_geometry->getWidthX() / _azim_spacing * sin(phi))) + 1;
-    ny = (int) (fabs(_geometry->getWidthY() / _azim_spacing * cos(phi))) + 1;
+    nx = (int) (fabs(width_x / _azim_spacing * sin(phi))) + 1;
+    ny = (int) (fabs(width_y / _azim_spacing * cos(phi))) + 1;
+    std::cout<< "Standard Parabola X: "<<nx << " Y: "<< ny;
     _goal_interp_y[interp_pointers[i]] = nx + ny;
     /* Squash the angle into being cyclic */
-    phi = atan((_geometry->getWidthY() * _num_x[i]) / 
-        (_geometry->getWidthX() * _num_y[i]));
+    phi = atan((width_y * nx) / 
+        (width_x * ny));
     _goal_interp_x[interp_pointers[i]] = phi;
   }
 }
