@@ -866,7 +866,7 @@ void TrackGenerator::initializeTracks() {
   int* test_nx = new int[len_test_arrays];
   int* test_ny = new int[len_test_arrays];
   
-  double x1, x2, min_penalty, min_j, nx, ny, prev_phi, prev_ratio,
+  double x1, x2, min_penalty,  nx, ny, prev_phi, prev_ratio,
          phi, ts, tsx, tsy, target_w, w_penalty,
          w_mult ,track_mult, track_penalty;
   
@@ -877,54 +877,89 @@ void TrackGenerator::initializeTracks() {
   w_mult = 1.0;
   track_mult = 1.0;
   
-  prev_nx = _num_x[middle];
-  prev_ny = _num_y[middle];
-  prev_ratio = 1.0;
 
   /* Calculates the ideal width between angles */
   target_w = M_PI / _num_azim_2;
 
-  /* Determine azimuthal angles and track spacing for ϴ < π/4 */
-  for (int i = middle; i >= 0; i--) {
+  /* Switch between going down in angle and up in angle from pi/4 */
+  for (int upDown = 0; upDown < 2; upDown++) {
+    prev_nx = _num_x[middle];
+    prev_ny = _num_y[middle];
+    prev_ratio = 1.0;
     
-    /*Resets loops vars for next angle */
-    new_angle_pntr = 0;
-    for ( int j = 0; j < len_test_arrays; j++) {
-      test_nx[j] = 0;
-      test_ny[j] = 0;
-    }
+    /* Determine azimuthal angles and track spacing for ϴ < π/4 */
+    i = middle;
+    while ((upDown == 0 && i >= 0) || (upDown == 1 && i <= _num_azim_2 / 2)) {
+      
+      /*Resets loops vars for next angle */
+      new_angle_pntr = 0;
+      for ( int j = 0; j < len_test_arrays; j++) {
+        test_nx[j] = 0;
+        test_ny[j] = 0;
+      }
+      
+      if (upDown == 0 ) {
+        prev_j = prev_nx;
+        prev_k = prev_ny;
+      } else {
+        prev_j = prev_ny;
+        prev_k = prev_nx;
+      }
+      /* Creates possible angles which will be compared */
+      for ( int j = prev_j; j < prev_j + 5; j++) {
+        for ( int k = j + 1; k < prev_k + 6; k++) {
+          
+          if ( upDown == 1) {
+            x = j;
+            y = k;
+          } else {
+            x = k;
+            y = j;
+          }
+          /* Don't waste time on going backwards */
+          if ((upDown == 0 && y/x < prev_ratio) || 
+              (upDown == 1 && y/x > prev_ratio) ) {
+            
+            test_nx[new_angle_pntr] = x; 
+            test_ny[new_angle_pntr] = y;
+            phi = atan(width_y*x/(width_x*y));
 
-    /* Creates possible angles which will be compared */
-    for ( int j = prev_nx; j < prev_nx + 5; j++) {
-      for ( int k = j + 1; k < prev_ny + 6; k++) {
+            /*Calculates the penalties (merits & demerits) for new angle */
+            w_penalty = (abs(phi - prev_phi) - target_w) / target_w;
+            track_penalty = this -> calcPenalty(x, y);
+            penalties[new_angle_pntr] = w_mult * w_penalty +
+                                       track_mult * track_penalty;
 
-        /* Don't waste time on going backwards */
-        if ( j/k < prev_ratio ) {
-          test_nx[new_angle_pntr] = j;
-          test_ny[new_angle_pntr] = k;
-          phi = atan(width_y*j/(width_x*k));
-
-          /*Calculates the penalties (merits & demerits) for new angle */
-          w_penalty = (abs(phi - prev_phi) - target_w) / target_w;
-          track_penalty = this->calcPenalty(j, k);
-          penalties[new_angle_pntr] = w_mult * w_penalty +
-                                     track_mult * track_penalty;
-
-          /*Move to next angel */
-          prev_phi = phi;
-          new_angle_pntr++;
+            /*Move to next angel */
+            new_angle_pntr++;
+          }
         }
       }
-    }
-    min_penalty = 100000;
-    for (int j = 0; j < len_test_arrays; j++) {
-      if (penalties[j] < min_penalty) {
-        min_penalty = penalties[j];
-        min_j = j;
+      min_penalty = 100000;
+      min_j = 0;
+      for (int j = 0; j < len_test_arrays; j++) {
+        if(test_nx[j] == 0 || test_ny[j] == 0) {
+          break;
+        }
+        if (penalties[j] < min_penalty && test_nx[j]>0) {
+          min_penalty = penalties[j];
+          min_j = j;
+        }
       }
-      _num_x[i] = test_nx[j];
-      _num_y[i] = test_ny[j];
-      _quadrature->setPhi(atan(width_y* _num_x[i] / (width_x* _num_y[i])), i);
+      _num_x[i] = test_nx[min_j];
+      _num_y[i] = test_ny[min_j];
+      phi = atan(width_y * _num_x[i] / (width_x * _num_y[i]));
+      _quadrature->setPhi(phi, i);
+      prev_phi = phi;
+      prev_ratio = _num_y[i]/_num_x[i];
+      prev_nx = _num_x[i];
+      prev_ny = _num_y[i];
+      
+      if ( upDown == 0) {
+        i--;
+      } else {
+        i++;
+      }
     }
   }
 
