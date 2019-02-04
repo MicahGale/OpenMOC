@@ -886,6 +886,7 @@ void TrackGenerator::initializeTracks() {
     prev_nx = _num_x[middle];
     prev_ny = _num_y[middle];
     prev_ratio = 1.0;
+    prev_phi = _quadrature -> getPhi(middle);
     
     /* Determine azimuthal angles and track spacing for ϴ < π/4 */
     i = middle;
@@ -1016,6 +1017,92 @@ void TrackGenerator::initializeTracks() {
 }
 
 /**
+ * @brief Uses a recursive binary search to find the optimal next angle.
+ * @details Using large steps it finds a number of possibilities ensuring
+ *          That some of the angles do go past the desired angle. The best
+ *          angle is found using the relative badness of the nx, ny combination.
+ *          The search is then narrowed by halving the step size, and starting
+ *          the next search half a step before the desired angle. The old
+ *          results are stored so the global optimal nx, ny combination can be 
+ *          found.
+ * @param penalties: A map which will store the calculated penalties for an 
+ *                  angle. The key is: nx*HASH_SPACING + ny. 
+ * @param start_nx: The nx value to start with.
+ * @param start_ny: The ny value to start with.
+ * @param goalPhi: the Goal angle you want to achieve based on 2Pi/N_phi
+ * @param step_nx: the Step size in x to use.
+ * @param step_ny: The step size in y to use.
+ * @param i      : The index for this angle in the quadrature
+ */
+void TrackGenerator::binarySearchForNextAngle(std::map<int,double> &penalties,
+                    int start_nx, int start_ny, double goalPhi, 
+                    int step_nx, int step_ny, int i) {
+
+  int nx, ny, min_key;
+  double min_penal, penalty, prev_ratio, phi, width_x, width_y;
+  
+  prev_ratio = start_ny / start_nx;
+  width_x = _geometry -> getWidthX();
+  width_y = _geometry -> getWidthY();
+  
+  /* Do 5 total large scale searches at this level */
+  for (int i = 0; i < 5; i++) { 
+    /* Search in nx*/
+    nx = start_nx + step_nx * i;
+    ny = start_ny; 
+    /* search in ny until passed the desired angle */
+    while (true) {
+      /* Verify that this angle is shallower than previous angle */
+      if (ny / nx < prev_ratio) {
+        /* Verify that we haven't done the math for this combination yet */
+        if (penalties.find(nx * HASH_SPACING + ny) == penalties.end()) { 
+          /*Calculate the angle from nx and ny */
+          phi = atan((width_y * nx) / (width_x * ny));
+          penalty = this -> calcPenalty(nx, ny, phi, goalPhi);       
+          
+          /* Save the penalty to the map in a way that:
+           *      nx and ny can be retrieved */
+          penalties[nx * HASH_SPACING + ny] = penalty; 
+        }
+        /* If this angle has passed the goal stop */
+        if ( phi >= goalPhi) break;
+      }
+      ny += step_ny;
+    }
+  }
+
+  /* Find the minimum penalty */
+  min_key = 0;
+  min_penal = 1000000;
+  for(std::map<int,double>::iterator it = penalties.begin();
+        it != penalties.end(); it++) {
+    if ( it -> second < min_penal) {
+      min_penal = it -> second;
+      min_key = it -> first;
+    }
+  }
+  
+  /*Retrieve nx and ny from the key */
+  nx = (int) (min_key/HASH_SPACING);
+  ny = min_key - nx*HASH_SPACING;
+
+  /* If still using big steps invoke recursive searching */
+  if ( step_nx > 1 && step_ny > 1)  {
+    /*Back up by half of step, and decrease steps by 1/2 */
+    this -> binarySearchForNextAngle(penalties, 
+        nx - step_nx / 2, ny - step_ny / 2, goalPhi,
+        step_nx / 2, step_ny / 2, i);
+
+  /* If down to stepping by 1 store the optimal angle */
+  } else {
+    _num_x[i] = nx;
+    _num_y[i] = ny;
+    phi = atan(width_y * nx / (width_x *ny));
+    _quadrature->setPhi(phi, i);
+  }
+}
+ 
+/**
  *@brief Stores points of angle v. tracks for the goal parabola
  *@detail There are many combinations of nx and ny that give the same
  *        angle, but vast different number of tracks. Therefore 
@@ -1037,7 +1124,7 @@ void TrackGenerator::calculatePenaltyParabola() {
   width_x = _geometry -> getWidthX();
   width_y = _geometry -> getWidthY();
   /*Finds the least amount tracks possible*/
-  tsx = sqrt(2)/2*_azim_spacing; 
+  tsx = sqrt(2.0) * _azim_spacing; 
   tsy = tsx;
   
   /* finds the index for the 45 deg angle */
@@ -1070,15 +1157,16 @@ void TrackGenerator::calculatePenaltyParabola() {
 
 /**
  * @brief Calculates the penalty  for the number based on the number of tracks.
- * @detail Finds where this track combination sits on the penalty parabola created from 
-  *               calculatePenaltyParabola(). Gives the deviation from the parabola as a percentage
-  * @param nx: the number of tracks on the x-side of the box
-  * @param ny: the number of tracks on the y-side
+ * @detail Finds where this track combination sits on the penalty parabola 
+ *        created from calculatePenaltyParabola(). Gives the deviation 
+ *        from the parabola as a percentage
+ * @param nx: the number of tracks on the x-side of the box
+ * @param ny: the number of tracks on the y-side
  * @returns  The deviation from the parabola in number of tracks as a unitiless quantiy.
  *                    Positive if more tracks than optimal, negative if less tracks than "optimal".
  */
-double TrackGenerator::calcPenalty(int nx, int ny) {
-  double a, b, c, fa, fb, fc, phi, goal, num_tracks;
+double TrackGenerator::calcPenalty(int nx, int ny, double phi, double goalPhi) {
+  double a, b, c, fa, fb, fc, phi_penalty, goal, num_tracks;
   
   a = _goal_interp_x[0];
   fa = _goal_interp_y[0];
@@ -1088,9 +1176,8 @@ double TrackGenerator::calcPenalty(int nx, int ny) {
 
   c = _goal_interp_x[2];
   fc = _goal_interp_y[2];
-
+  
   /** Calculates angle and number of tracks */
-  phi = atan((_geometry->getWidthY()*nx)/(_geometry->getWidthX()*ny));
   num_tracks = nx + ny;
   
   /* Calculates how many tracks should be created ideally 
@@ -1099,10 +1186,9 @@ double TrackGenerator::calcPenalty(int nx, int ny) {
          fb*((phi-c)*(phi-a))/((b-c)*(b-a)) + 
          fc*((phi-a)*(phi-b))/((c-a)*(c-b));
 
-  return (num_tracks-goal)/goal; 
+  phi_penalty = fabs(phi-goalPhi) / (M_PI / _num_azim_2);
   
-
-
+  return (num_tracks-goal)/goal * TRACK_WEIGHT + phi_penalty * PHI_WEIGHT; 
 }
 /**
  * @brief Calculates the track spacing for the given nx, ny
