@@ -860,46 +860,57 @@ void TrackGenerator::initializeTracks() {
 
   double width_x = _geometry->getWidthX();
   double width_y = _geometry->getWidthY();
-
-  int len_test_arrays = 21;
-  double* penalties = new double[len_test_arrays];
-  int* test_nx = new int[len_test_arrays];
-  int* test_ny = new int[len_test_arrays];
   
   double x1, x2, min_penalty,  nx, ny, prev_phi, prev_ratio,
-         phi, ts, tsx, tsy, target_w, w_penalty,
-         w_mult ,track_mult, track_penalty;
+         phi, ts, tsx, tsy, target_w, goal_phi;
   
-  int i, min_j, prev_nx, prev_ny, prev_j, prev_k, new_angle_pntr, middle, x, y;
- 
+  int i, min_j, prev_nx, prev_ny, prev_j, prev_k, new_angle_pntr, middle, 
+      step_nx, step_ny, x, y;
+
+  std::map<int, double> penalties;
+
   this -> calculatePenaltyParabola();
   middle = (int) (_num_azim_2/4) + 1; 
-  w_mult = 1.0;
-  track_mult = 1.0;
-  
-
+ 
   /* Calculates the ideal width between angles */
   target_w = M_PI / _num_azim_2;
+  
+  step_nx = (int) (((M_PI / 4)  / _num_x[middle]) * target_w);
+  step_ny = (int) (((M_PI / 4)  / _num_y[middle]) * target_w);
 
   /* Switch between going down in angle and up in angle from pi/4 */
-  for (int upDown = 0; upDown < 2; upDown++) {
+  for (int up_down = 0; up_down < 2; up_down++) {
     prev_nx = _num_x[middle];
     prev_ny = _num_y[middle];
-    prev_ratio = 1.0;
-    prev_phi = _quadrature -> getPhi(middle);
     
     /* Determine azimuthal angles and track spacing for ϴ < π/4 */
     i = middle;
-    while ((upDown == 0 && i >= 0) || (upDown == 1 && i <= _num_azim_2 / 2)) {
+    while ((up_down == 0 && i >= 0) || (up_down == 1 && i <= _num_azim_2 / 2)) {
       
-      /*Resets loops vars for next angle */
-      new_angle_pntr = 0;
-      for ( int j = 0; j < len_test_arrays; j++) {
-        test_nx[j] = 0;
-        test_ny[j] = 0;
+      
+      penalties.clear();
+      if(up_down == 0) {
+        goal_phi = prev_phi - target_w;
+      } else {
+        goal_phi = prev_phi + target_w;
       }
+
+      this -> binarySearchForNextAngle(penalties, prev_nx, prev_ny, goal_phi,
+          step_nx, step_ny, i);
       
-      if (upDown == 0 ) {
+      prev_phi = _quadrature -> getPhi(i);
+      prev_nx = _num_x[i];
+      prev_ny = _num_y[i];
+      
+      if ( up_down == 0) {
+        i--;
+      } else {
+        i++;
+      }
+    }
+  }
+
+      if (up_down == 0 ) {
         prev_j = prev_nx;
         prev_k = prev_ny;
       } else {
@@ -917,53 +928,6 @@ void TrackGenerator::initializeTracks() {
             x = k;
             y = j;
           }
-          /* Don't waste time on going backwards */
-          if ((upDown == 0 && y/x < prev_ratio) || 
-              (upDown == 1 && y/x > prev_ratio) ) {
-            
-            test_nx[new_angle_pntr] = x; 
-            test_ny[new_angle_pntr] = y;
-            phi = atan(width_y*x/(width_x*y));
-
-            /*Calculates the penalties (merits & demerits) for new angle */
-            w_penalty = (abs(phi - prev_phi) - target_w) / target_w;
-            track_penalty = this -> calcPenalty(x, y);
-            penalties[new_angle_pntr] = w_mult * w_penalty +
-                                       track_mult * track_penalty;
-
-            /*Move to next angel */
-            new_angle_pntr++;
-          }
-        }
-      }
-      min_penalty = 100000;
-      min_j = 0;
-      for (int j = 0; j < len_test_arrays; j++) {
-        if(test_nx[j] == 0 || test_ny[j] == 0) {
-          break;
-        }
-        if (penalties[j] < min_penalty && test_nx[j]>0) {
-          min_penalty = penalties[j];
-          min_j = j;
-        }
-      }
-      _num_x[i] = test_nx[min_j];
-      _num_y[i] = test_ny[min_j];
-      phi = atan(width_y * _num_x[i] / (width_x * _num_y[i]));
-      _quadrature->setPhi(phi, i);
-      prev_phi = phi;
-      prev_ratio = _num_y[i]/_num_x[i];
-      prev_nx = _num_x[i];
-      prev_ny = _num_y[i];
-      
-      if ( upDown == 0) {
-        i--;
-      } else {
-        i++;
-      }
-    }
-  }
-
   log_printf(INFO, "Generating Track start and end points...");
 
   /* Compute Track starting and end points */
@@ -1146,7 +1110,7 @@ void TrackGenerator::calculatePenaltyParabola() {
     phi = M_PI/_num_azim_2 * angle_multi[i];
     nx = (int) (fabs(width_x / _azim_spacing * sin(phi))) + 1;
     ny = (int) (fabs(width_y / _azim_spacing * cos(phi))) + 1;
-    std::cout<< "Standard Parabola X: "<<nx << " Y: "<< ny;
+    
     _goal_interp_y[interp_pointers[i]] = nx + ny;
     /* Squash the angle into being cyclic */
     phi = atan((width_y * nx) / 
