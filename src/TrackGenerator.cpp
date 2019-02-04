@@ -874,9 +874,8 @@ void TrackGenerator::initializeTracks() {
  
   /* Calculates the ideal width between angles */
   target_w = M_PI / _num_azim_2;
-  
-  step_nx = (int) (((M_PI / 4)  / _num_x[middle]) * target_w);
-  step_ny = (int) (((M_PI / 4)  / _num_y[middle]) * target_w);
+  step_nx = (int) ((_num_x[middle] /  (M_PI / 4)) * target_w);
+  step_ny = (int) ((_num_y[middle] /  (M_PI / 4)) * target_w);
 
   /* Switch between going down in angle and up in angle from pi/4 */
   for (int up_down = 0; up_down < 2; up_down++) {
@@ -917,11 +916,6 @@ void TrackGenerator::initializeTracks() {
         prev_j = prev_ny;
         prev_k = prev_nx;
       }
-      /* Creates possible angles which will be compared */
-      for ( int j = prev_j; j < prev_j + 5; j++) {
-        for ( int k = j + 1; k < prev_k + 6; k++) {
-          
-          if ( upDown == 1) {
             x = j;
             y = k;
           } else {
@@ -1017,8 +1011,9 @@ void TrackGenerator::binarySearchForNextAngle(std::map<int,double> &penalties,
     /* search in ny until passed the desired angle */
     while (true) {
       /* Verify that this angle is shallower than previous angle */
-      if (ny / nx < prev_ratio) {
+      if (ny / nx > prev_ratio) {
         /* Verify that we haven't done the math for this combination yet */
+
         if (penalties.find(nx * HASH_SPACING + ny) == penalties.end()) { 
           /*Calculate the angle from nx and ny */
           phi = atan((width_y * nx) / (width_x * ny));
