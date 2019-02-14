@@ -879,7 +879,7 @@ void TrackGenerator::initializeTracks() {
   std::map<int, double> penalties;
 
   this -> calculatePenaltyParabola();
-  middle = (int) (_num_azim_2/4) + 1; 
+  middle = (int) (_num_azim_2/4); 
  
   /* Calculates the ideal width between angles */
   target_w = M_PI / _num_azim_2;
@@ -893,28 +893,23 @@ void TrackGenerator::initializeTracks() {
     
     /* Determine azimuthal angles and track spacing for ϴ < π/4 */
     i = middle;
-    while ((up_down == 0 && i >= 0) || (up_down == 1 && i <= _num_azim_2 / 2)) {
-      
-      
-      penalties.clear();
-      if(up_down == 0) {
-        goal_phi = prev_phi - target_w;
-      } else {
-        goal_phi = prev_phi + target_w;
-      }
-
-      this -> binarySearchForNextAngle(penalties, prev_nx, prev_ny, goal_phi,
-          step_nx, step_ny, i);
-      
-      prev_phi = _quadrature -> getPhi(i);
-      prev_nx = _num_x[i];
-      prev_ny = _num_y[i];
-      
+    while (true)  {
       if ( up_down == 0) {
         i--;
       } else {
         i++;
       }
+      if (!((up_down == 0 && i >= 0) || (up_down == 1 && i <= _num_azim_2 / 2))) 
+        break;
+      
+      penalties.clear();
+      goal_phi = M_PI / _num_azim_2 * (0.5  + i);
+      
+      this -> binarySearchForNextAngle(penalties, prev_nx, prev_ny, goal_phi,
+          -step_nx, step_ny, i);
+      prev_nx = _num_x[i];
+      prev_ny = _num_y[i];
+      
     }
   }
 
