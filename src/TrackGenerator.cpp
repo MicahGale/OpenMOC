@@ -441,7 +441,16 @@ void TrackGenerator::setNumAzim(int num_azim) {
   if (num_azim % 4 != 0)
     log_printf(ERROR, "Unable to set the number of azimuthal angles to %d for "
                "the TrackGenerator since it is not a multiple of 4", num_azim);
-
+  
+  if (num_azim % 8 == 0) {
+    double quarter = num_azim / 4;
+    int new_num_azim = 4 * ((int) quarter + 1);
+    log_printf(WARNING, "Unable to set the number of azimuthal angles to %d for "
+               "the TrackGenerator since it is not a multiple of 4 and an odd "
+               "number. The number of azimuthal angles was increased to %d", 
+               num_azim, new_num_azim);
+    num_azim = new_num_azim;
+  }
   _num_azim_2 = num_azim/2;
   resetStatus();
 }
