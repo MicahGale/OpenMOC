@@ -108,12 +108,12 @@ protected:
   double* _goal_interp_y;
 
   /** The weighting factor for excess tracks on the penalty */
-  const double TRACK_WEIGHT = 1.0;
+  const double TRACK_WEIGHT = 0.1;
   /** The weighting factor for varying from the normal angular spacing */
   const double PHI_WEIGHT = 1.0;
   /** The multiplier to prevent nx and ny combining in a map
    * The map key is : HASH_SPACING * nx + ny */
-  const int HASH_SPACING = 10000;
+  const int HASH_SPACING = 100000;
 
   void computeEndPoint(Point* start, Point* end,  const double phi,
                        const double width_x, const double width_y);
@@ -137,7 +137,7 @@ protected:
   double calcPenalty(int nx, int ny, double phi, double goalPhi);
   void binarySearchForNextAngle(std::map<int,double> &penalties,
                     int start_nx, int start_ny, double goalPhi,
-                    int step_nx, int step_ny, int i);
+                    int step_nx, int step_ny, int i, bool upDown);
 public:
 
   TrackGenerator(Geometry* geometry, int num_azim, double azim_spacing);

@@ -870,7 +870,7 @@ void TrackGenerator::initializeTracks() {
   double width_x = _geometry->getWidthX();
   double width_y = _geometry->getWidthY();
   
-  double x1, x2, min_penalty,  nx, ny, prev_phi, prev_ratio,
+  double x1, x2, min_penalty,  nx, ny, prev_ratio,
          phi, ts, tsx, tsy, target_w, goal_phi;
   
   int i, min_j, prev_nx, prev_ny, prev_j, prev_k, new_angle_pntr, middle, 
@@ -883,14 +883,23 @@ void TrackGenerator::initializeTracks() {
  
   /* Calculates the ideal width between angles */
   target_w = M_PI / _num_azim_2;
-  step_nx = (int) ((_num_x[middle] /  (M_PI / 4)) * target_w);
-  step_ny = (int) ((_num_y[middle] /  (M_PI / 4)) * target_w);
+  
+  step_nx = (int) ((_num_x[middle] /  M_PI) * target_w);
+  step_ny = (int) ((_num_y[middle] /  M_PI) * target_w);
 
-  /* Switch between going down in angle and up in angle from pi/4 */
+  /* Switch between going down in angle and up in angle from pi/4
+   * Going down =0 and going up = 1*/
   for (int up_down = 0; up_down < 2; up_down++) {
     prev_nx = _num_x[middle];
     prev_ny = _num_y[middle];
-    
+    if (up_down == 0) {
+      step_nx = - abs(step_nx);
+      step_ny = abs(step_ny);
+    } else {
+      step_nx = abs(step_nx);
+      step_ny = - abs(step_ny);
+    }
+
     /* Determine azimuthal angles and track spacing for ϴ < π/4 */
     i = middle;
     while (true)  {
@@ -933,7 +942,7 @@ void TrackGenerator::initializeTracks() {
 
     /* Extract the azimuthal angle */
     double phi = _quadrature->getPhi(i);
-
+    
     /* Tracks for azimuthal angle i */
     _tracks[i] = new Track[_num_tracks[i]];
 
@@ -995,42 +1004,53 @@ void TrackGenerator::initializeTracks() {
  * @param step_nx: the Step size in x to use.
  * @param step_ny: The step size in y to use.
  * @param i      : The index for this angle in the quadrature
+ * @param upDown : If true going up in angle from pi/4, false if going down.
  */
 void TrackGenerator::binarySearchForNextAngle(std::map<int,double> &penalties,
                     int start_nx, int start_ny, double goalPhi, 
-                    int step_nx, int step_ny, int i) {
+                    int step_nx, int step_ny, int i, bool upDown) {
 
-  int nx, ny, min_key;
-  double min_penal, penalty, prev_ratio, phi, width_x, width_y;
+  int j, k, l, nx, ny, min_key, step_k, step_l;
+  double min_penal, new_ratio, penalty, prev_ratio, phi, tsx, tsy, 
+         width_x, width_y;
   
-  prev_ratio = start_ny / start_nx;
+  prev_ratio = (double) start_ny / (double) start_nx;
   width_x = _geometry -> getWidthX();
   width_y = _geometry -> getWidthY();
   
   /* Do 5 total large scale searches at this level */
-  for (int i = 0; i < 5; i++) { 
+  for (int i = 0; i < 50; i++) { 
     /* Search in nx*/
     nx = start_nx + step_nx * i;
     ny = start_ny; 
+    j = 0;
     /* search in ny until passed the desired angle */
-    while (true) {
+    while (j < 50) {
       /* Verify that this angle is shallower than previous angle */
-      if (ny / nx > prev_ratio) {
+          tsx = width_x / nx;
+          tsy = width_y / ny;
+      new_ratio = (double) ny / (double) nx;
+      if ((!upDown && new_ratio > prev_ratio) ||
+          (upDown && new_ratio < prev_ratio)) {
         /* Verify that we haven't done the math for this combination yet */
 
         if (penalties.find(nx * HASH_SPACING + ny) == penalties.end()) { 
           /*Calculate the angle from nx and ny */
-          phi = atan((width_y * nx) / (width_x * ny));
-          penalty = this -> calcPenalty(nx, ny, phi, goalPhi);       
-          
-          /* Save the penalty to the map in a way that:
-           *      nx and ny can be retrieved */
-          penalties[nx * HASH_SPACING + ny] = penalty; 
+          tsx = width_x / nx;
+          tsy = width_y / ny;
+          if ((tsx * tsy) / sqrt(pow(tsx,2.0)+ pow(tsy,2.0)) <= _azim_spacing) {
+            phi = atan((width_y * nx) / (width_x * ny));
+            penalty = this -> calcPenalty(nx, ny, phi, goalPhi);       
+            /* Save the penalty to the map in a way that:
+             *      nx and ny can be retrieved */
+            penalties[nx * HASH_SPACING + ny] = penalty; 
+          }
         }
         /* If this angle has passed the goal stop */
-        if ( phi >= goalPhi) break;
+        if ( phi <= goalPhi) break;
       }
       ny += step_ny;
+      j++;
     }
   }
 
@@ -1050,12 +1070,19 @@ void TrackGenerator::binarySearchForNextAngle(std::map<int,double> &penalties,
   ny = min_key - nx*HASH_SPACING;
 
   /* If still using big steps invoke recursive searching */
-  if ( step_nx > 1 && step_ny > 1)  {
+  if ( abs(step_nx) > 1 && abs(step_ny) > 1)  {
     /*Back up by half of step, and decrease steps by 1/2 */
-    this -> binarySearchForNextAngle(penalties, 
-        nx - step_nx / 2, ny - step_ny / 2, goalPhi,
-        step_nx / 2, step_ny / 2, i);
-
+    if(!upDown) {
+      this -> binarySearchForNextAngle(penalties, 
+          nx + step_nx / 2 , ny - step_ny / 2, goalPhi,
+          step_nx / 2, step_ny / 2, i,upDown);
+      return;
+    } else {
+      this -> binarySearchForNextAngle(penalties, 
+          nx - step_nx / 2 , ny + step_ny / 2, goalPhi,
+          step_nx / 2, step_ny / 2, i,upDown);
+      return;
+    }
   /* If down to stepping by 1 store the optimal angle */
   } else {
     _num_x[i] = nx;
@@ -1091,7 +1118,7 @@ void TrackGenerator::calculatePenaltyParabola() {
   tsy = tsx;
   
   /* finds the index for the 45 deg angle */
-  middle = (int) (_num_azim_2/4) + 1;
+  middle = (int) (_num_azim_2/4);
   _num_x[middle] = (int) ceil(_geometry->getWidthX() / tsx);
   _num_y[middle] = (int) ceil(_geometry->getWidthY() / tsy);
 
