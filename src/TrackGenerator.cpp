@@ -442,15 +442,11 @@ void TrackGenerator::setNumAzim(int num_azim) {
     log_printf(ERROR, "Unable to set the number of azimuthal angles to %d for "
                "the TrackGenerator since it is not a multiple of 4", num_azim);
   
-  if (num_azim % 8 == 0) {
-    double quarter = num_azim / 4;
-    int new_num_azim = 4 * ((int) quarter + 1);
-    log_printf(WARNING, "Unable to set the number of azimuthal angles to %d for "
-               "the TrackGenerator since it is not a multiple of 4 and an odd "
-               "number. The number of azimuthal angles was increased to %d", 
-               num_azim, new_num_azim);
-    num_azim = new_num_azim;
-  }
+  if (num_azim % 8 == 0) 
+    log_printf(ERROR, "Unable to set the number of azimuthal angles to %d for "
+               "the TrackGenerator since it is not a product of 4 and an odd "
+               "number.", 
+               num_azim);
   _num_azim_2 = num_azim/2;
   resetStatus();
 }
@@ -910,18 +906,28 @@ void TrackGenerator::initializeTracks() {
       }
       if (!((up_down == 0 && i >= 0) || (up_down == 1 && i < _num_azim_2 / 2))) 
         break;
-      std::cout << "Prev X: "<<  prev_nx << " Prev Y: "<< prev_ny << std::endl;
       
       penalties.clear();
       goal_phi = M_PI / _num_azim_2 * (0.5  + i);
       
-      std::cout<< "goal: "<<goal_phi <<std::endl;
       this -> binarySearchForNextAngle(penalties, prev_nx, prev_ny, goal_phi,
           step_nx, step_ny, i, up_down == 1);
-      std::cout<< "hello" <<std::endl; 
       prev_nx = _num_x[i];
       prev_ny = _num_y[i];
-      
+      phi = _quadrature->getPhi(i);
+      /* Effective Track spacing (not spacing we desire, but close) */
+      dx_eff[i] = width_x / _num_x[i];
+      dy_eff[i] = width_y / _num_y[i];
+      d_eff[i] = dx_eff[i] * sin(phi);
+      _quadrature->setAzimSpacing(d_eff[i], i);
+
+      /* Set attributes for complimentary angles */
+      _num_x[_num_azim_2-i-1] = _num_x[i];
+      _num_y[_num_azim_2-i-1] = _num_y[i];
+      _num_tracks[_num_azim_2-i-1] = _num_tracks[i];
+      dx_eff[_num_azim_2-i-1] = dx_eff[i];
+      dy_eff[_num_azim_2-i-1] = dy_eff[i];
+      d_eff[_num_azim_2-i-1] = d_eff[i];
     }
   }
   log_printf(INFO, "Generating Track start and end points...");
@@ -1036,13 +1042,13 @@ void TrackGenerator::binarySearchForNextAngle(std::map<int,double> &penalties,
         ny = k;
       }
       /* Verify that this angle is shallower than previous angle */
-          tsx = width_x / nx;
-          tsy = width_y / ny;
+      tsx = width_x / nx;
+      tsy = width_y / ny;
+      
       new_ratio = (double) ny / (double) nx;
       if ((!upDown && new_ratio > prev_ratio) ||
           (upDown && new_ratio < prev_ratio)) {
         /* Verify that we haven't done the math for this combination yet */
-
         if (penalties.find(nx * HASH_SPACING + ny) == penalties.end()) { 
           /*Calculate the angle from nx and ny */
           tsx = width_x / nx;
@@ -1073,7 +1079,6 @@ void TrackGenerator::binarySearchForNextAngle(std::map<int,double> &penalties,
       min_key = it -> first;
     }
   }
-  
   /*Retrieve nx and ny from the key */
   nx = (int) (min_key/HASH_SPACING);
   ny = min_key - nx*HASH_SPACING;
