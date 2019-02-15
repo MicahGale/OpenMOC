@@ -727,7 +727,7 @@ void TrackGenerator::generateTracks(bool store) {
       recalibrateTracksToOrigin();
       segmentize();
       if (store)
-	dumpTracksToFile();
+        dumpTracksToFile();
     }
     catch (std::exception &e) {
       log_printf(ERROR, "Unable to allocate memory for Tracks");
@@ -908,33 +908,22 @@ void TrackGenerator::initializeTracks() {
       } else {
         i++;
       }
-      if (!((up_down == 0 && i >= 0) || (up_down == 1 && i <= _num_azim_2 / 2))) 
+      if (!((up_down == 0 && i >= 0) || (up_down == 1 && i < _num_azim_2 / 2))) 
         break;
+      std::cout << "Prev X: "<<  prev_nx << " Prev Y: "<< prev_ny << std::endl;
       
       penalties.clear();
       goal_phi = M_PI / _num_azim_2 * (0.5  + i);
       
+      std::cout<< "goal: "<<goal_phi <<std::endl;
       this -> binarySearchForNextAngle(penalties, prev_nx, prev_ny, goal_phi,
-          -step_nx, step_ny, i);
+          step_nx, step_ny, i, up_down == 1);
+      std::cout<< "hello" <<std::endl; 
       prev_nx = _num_x[i];
       prev_ny = _num_y[i];
       
     }
   }
-
-      if (up_down == 0 ) {
-        prev_j = prev_nx;
-        prev_k = prev_ny;
-      } else {
-        prev_j = prev_ny;
-        prev_k = prev_nx;
-      }
-            x = j;
-            y = k;
-          } else {
-            x = k;
-            y = j;
-          }
   log_printf(INFO, "Generating Track start and end points...");
 
   /* Compute Track starting and end points */
@@ -1010,22 +999,42 @@ void TrackGenerator::binarySearchForNextAngle(std::map<int,double> &penalties,
                     int start_nx, int start_ny, double goalPhi, 
                     int step_nx, int step_ny, int i, bool upDown) {
 
-  int j, k, l, nx, ny, min_key, step_k, step_l;
+  int j, k, l, nx, ny, min_key, step_k, step_l, start_k, start_l;
   double min_penal, new_ratio, penalty, prev_ratio, phi, tsx, tsy, 
          width_x, width_y;
   
   prev_ratio = (double) start_ny / (double) start_nx;
   width_x = _geometry -> getWidthX();
   width_y = _geometry -> getWidthY();
-  
+  if (upDown) {
+    step_k = step_nx;
+    step_l = step_ny;
+    k = start_nx;
+    l = start_ny;
+  } else {
+    step_k = step_ny;
+    step_l = step_nx;
+    k = start_ny;
+    l = start_nx;
+  }
+  start_k = k;
+  start_l = l;
   /* Do 5 total large scale searches at this level */
   for (int i = 0; i < 50; i++) { 
     /* Search in nx*/
-    nx = start_nx + step_nx * i;
-    ny = start_ny; 
+    k = start_k + step_k * i;
+    if (k < 1) break;
+    l = start_l; 
     j = 0;
     /* search in ny until passed the desired angle */
     while (j < 50) {
+      if (upDown) {
+        nx = k;
+        ny = l;
+      } else {
+        nx = l;
+        ny = k;
+      }
       /* Verify that this angle is shallower than previous angle */
           tsx = width_x / nx;
           tsy = width_y / ny;
@@ -1047,9 +1056,9 @@ void TrackGenerator::binarySearchForNextAngle(std::map<int,double> &penalties,
           }
         }
         /* If this angle has passed the goal stop */
-        if ( phi <= goalPhi) break;
+        if ((!upDown && phi <= goalPhi) || (upDown && phi >= goalPhi)) break;
       }
-      ny += step_ny;
+      l += step_l;
       j++;
     }
   }
@@ -1087,6 +1096,7 @@ void TrackGenerator::binarySearchForNextAngle(std::map<int,double> &penalties,
   } else {
     _num_x[i] = nx;
     _num_y[i] = ny;
+    _num_tracks[i] = nx + ny;
     phi = atan(width_y * nx / (width_x *ny));
     _quadrature->setPhi(phi, i);
   }
