@@ -636,7 +636,7 @@ void TrackGenerator::retrieveSegmentCoords(double* coords, int length_coords) {
  *          number of Tracks for each azimuthal angle, allocates memory for
  *          all Tracks at each angle and sets each Track's starting and ending
  *          Points, azimuthal angle, and azimuthal angle quadrature weight.
- * @brief store whether to store the tracks to a file for reuse
+ * @param store whether to store the tracks to a file for reuse
  */
 void TrackGenerator::generateTracks(bool store) {
 
@@ -873,9 +873,22 @@ void TrackGenerator::initializeTracks() {
       step_nx, step_ny, x, y;
 
   std::map<int, double> penalties;
-
   this -> calculatePenaltyParabola();
-  middle = (int) (_num_azim_2/4); 
+  
+  middle = (int) (_num_azim_2/4);
+  phi = _quadrature->getPhi(middle);
+  dx_eff[middle] = width_x / _num_x[middle];
+  dy_eff[middle] = width_y / _num_y[middle];
+  d_eff[middle] = dx_eff[middle] * sin(phi);
+  _quadrature->setAzimSpacing(d_eff[middle], middle);
+
+  /* Set attributes for complimentary angles */
+  _num_x[_num_azim_2-middle-1] = _num_x[middle];
+  _num_y[_num_azim_2-middle-1] = _num_y[middle];
+  _num_tracks[_num_azim_2-middle-1] = _num_tracks[middle];
+  dx_eff[_num_azim_2-middle-1] = dx_eff[middle];
+  dy_eff[_num_azim_2-middle-1] = dy_eff[middle];
+  d_eff[_num_azim_2-middle-1] = d_eff[middle];
  
   /* Calculates the ideal width between angles */
   target_w = M_PI / _num_azim_2;
@@ -895,7 +908,6 @@ void TrackGenerator::initializeTracks() {
       step_nx = abs(step_nx);
       step_ny = - abs(step_ny);
     }
-
     /* Determine azimuthal angles and track spacing for ϴ < π/4 */
     i = middle;
     while (true)  {
@@ -976,7 +988,7 @@ void TrackGenerator::initializeTracks() {
       _tracks[i][j].setPhi(phi);
     }
   }
-
+  
   delete [] dx_eff;
   delete [] dy_eff;
   delete [] d_eff;
@@ -1143,6 +1155,12 @@ void TrackGenerator::calculatePenaltyParabola() {
   _goal_interp_x[1] = atan(tsy/tsx);
   _quadrature->setPhi(_goal_interp_x[1],middle);
 
+  phi = _quadrature->getPhi(middle);
+
+  /* Set attributes for complimentary angles */
+  _num_x[_num_azim_2-middle-1] = _num_x[middle];
+  _num_y[_num_azim_2-middle-1] = _num_y[middle];
+  _num_tracks[_num_azim_2-middle-1] = _num_tracks[middle];
   /* calculates the shallowest and steepest reasonable angle*/
   double angle_multi[] = {0.5, _num_azim_2/2-0.5};
   int interp_pointers[] = {0, 2};
