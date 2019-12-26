@@ -1,4 +1,5 @@
 #include "TrackTraversingAlgorithms.h"
+
 #include "CPUSolver.h"
 #include "Quadrature.h"
 

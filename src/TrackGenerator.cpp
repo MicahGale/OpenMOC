@@ -1114,7 +1114,7 @@ void TrackGenerator::binarySearchForNextAngle(std::map<int,double> &penalties,
     _num_x[i] = nx;
     _num_y[i] = ny;
     _num_tracks[i] = nx + ny;
-    phi = atan(width_y * nx / (width_x *ny));
+    phi = atan((width_y * nx) / (width_x *ny));
     _quadrature->setPhi(phi, i);
   }
 }
