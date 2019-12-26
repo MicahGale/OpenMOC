@@ -52,7 +52,7 @@ def load_from_hdf5(filename='mgxs.h5', directory='mgxs',
     """This routine loads an HDF5 file of multi-group cross section data.
 
     The routine instantiates material with multi-group cross section data and
-    returns a dictionary of each Material object keyed by its ID. An OpenMOC
+    returns a dictionary of each Material object keyed by its name or ID. An OpenMOC
     geometry may optionally be given and the routine will directly insert the
     multi-group cross sections into each material in the geometry. If a geometry
     is passed in, materials from the geometry will be used in place of those
@@ -202,22 +202,20 @@ def load_from_hdf5(filename='mgxs.h5', directory='mgxs',
 
         # Search for the scattering matrix cross section
         if 'consistent nu-scatter matrix' in domain_group:
-            sigma = _get_numpy_array(
-                domain_group, 'consistent nu-scatter matrix', suffix)
+            sigma = _get_numpy_array(domain_group, 'consistent nu-scatter matrix', suffix)
             material.setSigmaS(sigma)
-            py_printf('DEBUG', 'Loaded "consistent nu-scatter matrix" '
-                      'MGXS for "%s %s"', domain_type, str(domain_spec))
+            py_printf('DEBUG', 'Loaded "consistent nu-scatter matrix" MGXS for "%s %s"',
+                      domain_type, str(domain_spec))
         elif 'nu-scatter matrix' in domain_group:
             sigma = _get_numpy_array(domain_group, 'nu-scatter matrix', suffix)
             material.setSigmaS(sigma)
             py_printf('DEBUG', 'Loaded "nu-scatter matrix" MGXS for "%s %s"',
                       domain_type, str(domain_spec))
         elif 'consistent scatter matrix' in domain_group:
-            sigma = _get_numpy_array(
-                domain_group, 'consistent scatter matrix', suffix)
+            sigma = _get_numpy_array(domain_group, 'consistent scatter matrix', suffix)
             material.setSigmaS(sigma)
-            py_printf('DEBUG', 'Loaded "consistent scatter matrix" '
-                      'MGXS for "%s %s"', domain_type, str(domain_spec))
+            py_printf('DEBUG', 'Loaded "consistent scatter matrix" MGXS for "%s %s"',
+                      domain_type, str(domain_spec))
         elif 'scatter matrix' in domain_group:
             sigma = _get_numpy_array(domain_group, 'scatter matrix', suffix)
             material.setSigmaS(sigma)
@@ -243,6 +241,8 @@ def load_from_hdf5(filename='mgxs.h5', directory='mgxs',
             material.setSigmaF(sigma)
             py_printf('DEBUG', 'Loaded "fission" MGXS for "%s %s"',
                       domain_type, str(domain_spec))
+
+        #FIXME Add absorption cross section
 
     # Inform SWIG to garbage collect any old Materials from the Geometry
     for material_id in old_materials:
@@ -303,15 +303,10 @@ def load_openmc_mgxs_lib(mgxs_lib, geometry=None):
                       'domain type %s', mgxs_lib.domain_type)
 
     # Iterate over all domains (e.g., materials or cells) in the HDF5 file
-    num_materials = 0
     for domain in mgxs_lib.domains:
 
         # If using an OpenMOC Geometry, extract a Material from it
         if geometry:
-
-            # Cache the number of materials as an optimization
-            if num_materials == 0:
-                num_materials = geometry.getNumMaterials()
 
             if domain_type == 'material':
                 material = _get_domain(domains, domain.id)
@@ -338,7 +333,7 @@ def load_openmc_mgxs_lib(mgxs_lib, geometry=None):
                 # If the user filled multiple Cells with the same Material,
                 # the Material must be cloned for each unique Cell
                 if material != None:
-                    if len(domains) > num_materials:
+                    if len(domains) > geometry.getNumMaterials():
                         old_materials[material.getId()] = material
                         material = material.clone()
 
@@ -398,25 +393,25 @@ def load_openmc_mgxs_lib(mgxs_lib, geometry=None):
         # Search for the scattering matrix cross section
         if 'consistent nu-scatter matrix' in mgxs_lib.mgxs_types:
             mgxs = mgxs_lib.get_mgxs(domain, 'consistent nu-scatter matrix')
-            sigma = mgxs.get_xs(nuclides='sum', moment=0).flatten()
+            sigma = mgxs.get_xs(nuclides='sum').flatten()
             material.setSigmaS(sigma)
             py_printf('DEBUG', 'Loaded "consistent nu-scatter matrix" MGXS for "%s %d"',
                       domain_type, domain.id)
         elif 'nu-scatter matrix' in mgxs_lib.mgxs_types:
             mgxs = mgxs_lib.get_mgxs(domain, 'nu-scatter matrix')
-            sigma = mgxs.get_xs(nuclides='sum', moment=0).flatten()
+            sigma = mgxs.get_xs(nuclides='sum').flatten()
             material.setSigmaS(sigma)
             py_printf('DEBUG', 'Loaded "nu-scatter matrix" MGXS for "%s %d"',
                       domain_type, domain.id)
         elif 'consistent scatter matrix' in mgxs_lib.mgxs_types:
             mgxs = mgxs_lib.get_mgxs(domain, 'consistent scatter matrix')
-            sigma = mgxs.get_xs(nuclides='sum', moment=0).flatten()
+            sigma = mgxs.get_xs(nuclides='sum').flatten()
             material.setSigmaS(sigma)
-            py_printf('DEBUG', 'Loaded "consistent scatter matrix" '
-                      'MGXS for "%s %d"', domain_type, domain.id)
+            py_printf('DEBUG', 'Loaded "consistent scatter matrix" MGXS for "%s %d"',
+                      domain_type, domain.id)
         elif 'scatter matrix' in mgxs_lib.mgxs_types:
             mgxs = mgxs_lib.get_mgxs(domain, 'scatter matrix')
-            sigma = mgxs.get_xs(nuclides='sum', moment=0).flatten()
+            sigma = mgxs.get_xs(nuclides='sum').flatten()
             material.setSigmaS(sigma)
             py_printf('DEBUG', 'Loaded "scatter matrix" MGXS for "%s %d"',
                       domain_type, domain.id)
@@ -453,7 +448,9 @@ def load_openmc_mgxs_lib(mgxs_lib, geometry=None):
 
 def compute_sph_factors(mgxs_lib, max_sph_iters=30, sph_tol=1E-5,
                         fix_src_tol=1E-5, num_azim=4, azim_spacing=0.1,
-                        zcoord=0.0, num_threads=1, throttle_output=True):
+                        zcoord=0.0, num_threads=1, throttle_output=True,
+                        geometry=None, track_generator=None, solver=None,
+                        sph_domains=None, sph_mode="fixed source"):
     """Compute SPH factors for an OpenMC multi-group cross section library.
 
     This routine coputes SuPerHomogenisation (SPH) factors for an OpenMC MGXS
@@ -478,7 +475,7 @@ def compute_sph_factors(mgxs_lib, max_sph_iters=30, sph_tol=1E-5,
     sph_tol : Real
         The tolerance on the SPH factor convergence (default is 1E-5)
     fix_src_tol : Real
-        The tolerance on the MOC fixed source calculations (default is 1E-5_
+        The tolerance on the MOC fixed source calculations (default is 1E-5)
     num_azim : Integral
         The number of azimuthal angles (default is 4)
     azim_spacing : Real
@@ -489,49 +486,92 @@ def compute_sph_factors(mgxs_lib, max_sph_iters=30, sph_tol=1E-5,
         The number of OpenMP threads (default is 1)
     throttle_output : bool
         Whether to suppress output from fixed source calculations (default is True)
+    geometry : openmoc.Geometry
+        An optional openmoc geometry to compute SPH factors on
+    track_generator : openmoc.TrackGenerator
+        An optional track generator to avoid initializing it in this routine
+    solver : openmoc.Solver
+        An optional openmoc solver to compute SPH factors with
+    sph_domains : list of int
+        A list of domain (cell or material, based on mgxs_lib domain type) ids,
+        in which SPH factors should be computed. Default is only fissonable FSRs
+    sph_mode : string
+        Whether to compute SPH factors using fixed source or eigenvalue
+        calculations. Fixed source calculations tend to converge better but
+        require knowing the source distribution everywhere
 
     Returns
     -------
     fsrs_to_sph : numpy.ndarray of Real
         A NumPy array of SPH factors indexed by FSR and energy group
     sph_mgxs_lib : openmc.mgxs.Library
-        A OpenMC MGXS library with the SPH factors applied to each MGXS
+        An OpenMC MGXS library with the SPH factors applied to each MGXS
     sph_to_fsrs_indices : numpy.ndarray of Integral
-        A NumPy array of all fissionable FSRs to which SPH factors were applied
+        A NumPy array of all FSRs to which SPH factors were applied
 
     """
 
     import openmc.mgxs
 
     cv.check_type('mgxs_lib', mgxs_lib, openmc.mgxs.Library)
-
-    from openmc.openmoc_compatible import get_openmoc_geometry
+    cv.check_value('sph_mode', sph_mode, ('fixed source', 'eigenvalue'))
 
     # For Python 2.X.X
     if sys.version_info[0] == 2:
+        from openmc.openmoc_compatible import get_openmoc_geometry
         from process import get_scalar_fluxes
     # For Python 3.X.X
     else:
+        from openmc.openmoc_compatible import get_openmoc_geometry
         from openmoc.process import get_scalar_fluxes
 
     py_printf('NORMAL', 'Computing SPH factors...')
 
-    # Create an OpenMOC Geometry from the OpenMC Geometry
-    geometry = get_openmoc_geometry(mgxs_lib.geometry)
+    if not geometry:
+        # Create an OpenMOC Geometry from the OpenMC Geometry
+        geometry = get_openmoc_geometry(mgxs_lib.geometry)
 
-    # Load the MGXS library data into the OpenMOC geometry
-    load_openmc_mgxs_lib(mgxs_lib, geometry)
+        # Load the MGXS library data into the OpenMOC geometry
+        load_openmc_mgxs_lib(mgxs_lib, geometry)
 
-    # Initialize an OpenMOC TrackGenerator
-    track_generator = openmoc.TrackGenerator(geometry, num_azim, azim_spacing)
-    track_generator.setZCoord(zcoord)
-    track_generator.generateTracks()
+    if not track_generator:
+        # Initialize an OpenMOC TrackGenerator
+        track_generator = openmoc.TrackGenerator(geometry, num_azim,
+                                                 azim_spacing)
+        track_generator.setZCoord(zcoord)
+        track_generator.generateTracks()
+        track_generator.initializeVolumes()
+    else:
+        track_generator.initializeVolumes()
+        py_printf('WARNING', 'Using provided track generator, ignoring '
+                  'arguments for track generation settings')
 
-    # Initialize an OpenMOC Solver
-    solver = openmoc.CPUSolver(track_generator)
-    solver.setConvergenceThreshold(fix_src_tol)
-    solver.setNumThreads(num_threads)
-    openmc_fluxes = _load_openmc_src(mgxs_lib, solver)
+    if not solver:
+        # Initialize an OpenMOC Solver
+        solver = openmoc.CPUSolver(track_generator)
+        solver.setConvergenceThreshold(fix_src_tol)
+        solver.setNumThreads(num_threads)
+    else:
+        py_printf('WARNING', 'Using provided solver, ignoring arguments for '
+                  'solver settings')
+
+    # Get all OpenMOC domains
+    if mgxs_lib.domain_type == 'material':
+        openmoc_domains = geometry.getAllMaterials()
+    elif mgxs_lib.domain_type == 'cell':
+        openmoc_domains = geometry.getAllMaterialCells()
+    else:
+        py_printf('ERROR', 'SPH factors cannot be applied for an OpenMC MGXS '
+                  'library of domain type %s', mgxs_lib.domain_type)
+
+    if not sph_domains:
+        sph_domains = []
+        # If unspecified, apply sph factors in fissionable regions
+        for openmoc_domain in openmoc_domains.values():
+            if openmoc_domain.isFissionable():
+                sph_domains.append(openmoc_domain.getId())
+
+    openmc_fluxes = _load_openmc_src(mgxs_lib, solver, sph_mode)
 
     # Initialize SPH factors
     num_groups = geometry.getNumEnergyGroups()
@@ -553,24 +593,15 @@ def compute_sph_factors(mgxs_lib, max_sph_iters=30, sph_tol=1E-5,
         fsrs_to_domains[fsr] = domain.getId()
         domains_to_fsrs[domain.getId()].append(fsr)
 
-        if domain.isFissionable():
+        if domain.getId() in sph_domains:
             sph_to_fsr_indices.append(fsr)
 
-    # Get all OpenMOC domains
-    if mgxs_lib.domain_type == 'material':
-        openmoc_domains = geometry.getAllMaterials()
-    elif mgxs_lib.domain_type == 'cell':
-        openmoc_domains = geometry.getAllMaterialCells()
-    else:
-        py_printf('ERROR', 'SPH factors cannot be applied for an OpenMC MGXS '
-                  'library of domain type %s', mgxs_lib.domain_type)
-
-    # Build a list of indices into the SPH array for fissionable domains
+    # Build a list of indices into the SPH array for domains with SPH
     sph_to_domain_indices = []
     for i, openmc_domain in enumerate(mgxs_lib.domains):
         if openmc_domain.id in openmoc_domains:
             openmoc_domain = openmoc_domains[openmc_domain.id]
-            if openmoc_domain.isFissionable():
+            if openmoc_domain.getId() in sph_domains:
                 sph_to_domain_indices.append(i)
 
     py_printf('NORMAL', 'Computing SPH factors for %d "%s" domains',
@@ -579,7 +610,7 @@ def compute_sph_factors(mgxs_lib, max_sph_iters=30, sph_tol=1E-5,
     # Initialize array of domain-averaged fluxes and SPH factors
     num_domains = len(mgxs_lib.domains)
     openmoc_fluxes = np.zeros((num_domains, num_groups))
-    sph = np.ones((num_domains, num_groups))
+    sph = np.ones((num_domains, num_groups), 'd')
 
     # Store starting verbosity log level
     log_level = openmoc.get_log_level()
@@ -591,12 +622,20 @@ def compute_sph_factors(mgxs_lib, max_sph_iters=30, sph_tol=1E-5,
         if throttle_output:
             openmoc.set_log_level('WARNING')
 
-        # Fixed source calculation
-        solver.computeFlux()
+        # Disable flux resets between SPH iterations for speed
+        if i == 1:
+            solver.setRestartStatus(True)
+
+        if sph_mode == "fixed source":
+            # Fixed source calculation
+            solver.computeFlux()
+        else:
+            # Eigenvalue calculation
+            solver.computeEigenvalue()
 
         # Restore log output level
         if throttle_output:
-            openmoc.set_log_level(log_level)
+            openmoc.set_log_level('NORMAL')
 
         # Extract the FSR scalar fluxes
         fsr_fluxes = get_scalar_fluxes(solver)
@@ -605,6 +644,10 @@ def compute_sph_factors(mgxs_lib, max_sph_iters=30, sph_tol=1E-5,
         for j, openmc_domain in enumerate(mgxs_lib.domains):
             domain_fluxes = fsr_fluxes[fsrs_to_domains == openmc_domain.id, :]
             openmoc_fluxes[j, :] = np.mean(domain_fluxes, axis=0)
+
+        # Re-normalize MOC fluxes
+        if sph_mode == "eigenvalue":
+            openmoc_fluxes /= num_fsrs
 
         # Compute SPH factors
         old_sph = np.copy(sph)
@@ -616,42 +659,49 @@ def compute_sph_factors(mgxs_lib, max_sph_iters=30, sph_tol=1E-5,
         res = np.abs((sph - old_sph) / old_sph)
         res = np.nan_to_num(res)
 
-        # Extract residuals for fissionable domains only
+        # Extract residuals for domains with SPH factors only only
         res = res[sph_to_domain_indices, :]
+
+        # Load SPH factors in geometry
+        geometry.loadSPHFactors((sph/old_sph).flatten(),
+                                np.double([domain.id for domain in
+                                     mgxs_lib.domains])[sph_to_domain_indices],
+                                mgxs_lib.domain_type)
 
         # Report maximum SPH factor residual
         py_printf('NORMAL', 'SPH Iteration %d:\tres = %1.3e', i, res.max())
 
-        # Create a new MGXS library with cross sections updated by SPH factors
-        sph_mgxs_lib = _apply_sph_factors(mgxs_lib, geometry, sph)
-
-        # Load the new MGXS library data into the OpenMOC geometry
-        load_openmc_mgxs_lib(sph_mgxs_lib, geometry)
-
         # Check max SPH factor residual for this domain for convergence
-        if res.max() < sph_tol:
+        if res.max() < sph_tol and i > 0:
             break
 
     # Warn user if SPH factors did not converge
     else:
         py_printf('WARNING', 'SPH factors did not converge')
 
+    # Create a new MGXS library with cross sections updated by SPH factors
+    sph_mgxs_lib = _apply_sph_factors(mgxs_lib, geometry, sph, sph_domains)
+
+    # Reset fixed sources in solver if one wants to compute the eigenvalue
+    if sph_mode == "fixed source":
+        solver.resetFixedSources()
+
     # Collect SPH factors for each FSR, energy group
     fsrs_to_sph = np.ones((num_fsrs, num_groups), dtype=np.float)
     for i, openmc_domain in enumerate(mgxs_lib.domains):
         if openmc_domain.id in openmoc_domains:
             openmoc_domain = openmoc_domains[openmc_domain.id]
-            if openmoc_domain.isFissionable():
+            if openmoc_domain.getId() in sph_domains:
                 fsr_ids = domains_to_fsrs[openmc_domain.id]
                 fsrs_to_sph[fsr_ids,:] = sph[i,:]
 
     return fsrs_to_sph, sph_mgxs_lib, np.array(sph_to_fsr_indices)
 
 
-def _load_openmc_src(mgxs_lib, solver):
+def _load_openmc_src(mgxs_lib, solver, sph_mode):
     """Assign fixed sources to an OpenMOC model from an OpenMC MGXS library.
 
-    This routine computes the fission production and scattering source in
+    This routine computes the fission source and scattering source in
     each domain in an OpenMC MGXS library and assigns it as a fixed source
     for an OpenMOC calculation. This is a helper routine for the
     compute_sph_factors(...) routine.
@@ -662,6 +712,8 @@ def _load_openmc_src(mgxs_lib, solver):
         An OpenMC multi-group cross section library
     solver : openmoc.Solver
         An OpenMOC solver into which to load the fixed sources
+    sph_mode : string
+        Only load sources in solver for fixed source calculations
 
     Returns
     -------
@@ -747,8 +799,12 @@ def _load_openmc_src(mgxs_lib, solver):
         openmc_fluxes[i, :] = np.atleast_1d(np.flipud(flux))
         openmc_fluxes[i, :] /= tot_volume
 
+        # Eigenvalue calculations have no fixed sources
+        if sph_mode != "fixed source":
+            continue
+
         # Extract a NumPy array for each MGXS summed across all nuclides
-        scatter = scatter.get_xs(nuclides='sum', moment=0)
+        scatter = scatter.get_xs(nuclides='sum')
         nu_fission = nu_fission.get_xs(nuclides='sum')
         chi = chi.get_xs(nuclides='sum')
 
@@ -761,14 +817,19 @@ def _load_openmc_src(mgxs_lib, solver):
             source = np.sum(in_scatter) + np.sum(fission)
 
             # Assign the source to this domain
-            fsr_ids = domains_to_fsrs[openmoc_domain.getId()]
-            for fsr_id in fsr_ids:
-                solver.setFixedSourceByFSR(fsr_id, group+1, source)
+            if mgxs_lib.domain_type == 'material':
+                solver.setFixedSourceByMaterial(openmoc_domain, group+1, source)
+            else:
+                solver.setFixedSourceByCell(openmoc_domain, group+1, source)
+
+    # Normalize MC fluxes to the same convention as OpenMOC
+    if sph_mode == "eigenvalue":
+        openmc_fluxes /= keff
 
     return openmc_fluxes
 
 
-def _apply_sph_factors(mgxs_lib, geometry, sph):
+def _apply_sph_factors(mgxs_lib, geometry, sph, sph_domains):
     """Apply SPH factors to an OpenMC MGXS library.
 
     This is a helper routine for the compute_sph_factors(...) routine.
@@ -808,8 +869,8 @@ def _apply_sph_factors(mgxs_lib, geometry, sph):
         # Get OpenMOC domain corresponding to the OpenMC domain
         openmoc_domain = openmoc_domains[openmc_domain.id]
 
-        # Ignore non-fissionable domains
-        if not openmoc_domain.isFissionable():
+        # Ignore domains with no SPH factors
+        if openmoc_domain.getId() not in sph_domains:
             continue
 
         # Loop over all cross section types in the MGXS library
@@ -837,6 +898,6 @@ def _apply_sph_factors(mgxs_lib, geometry, sph):
             # Apply SPH factors to the MGXS in each nuclide, group
             sph_tally._mean = tally.mean * flip_sph[:, np.newaxis, np.newaxis]
             sph_tally._std_dev = \
-                tally.std_dev * flip_sph[:, np.newaxis, np.newaxis]**2
+                tally.std_dev * flip_sph[:, np.newaxis, np.newaxis]
 
     return sph_mgxs_lib
