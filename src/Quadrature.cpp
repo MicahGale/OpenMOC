@@ -793,7 +793,7 @@ std::string Quadrature::toString() {
   string << "\n\tthetas = ";
   if (_thetas != NULL) {
     for (int a = 0; a < _num_azim/4; a++) {
-      for (int p = 0; p < _num_polar/2; p)
+      for (int p = 0; p < _num_polar/2; p++) 
         string << " (" << a << "," << p << "): " << _thetas[a][p] << ", ";
     }
   }
@@ -801,7 +801,7 @@ std::string Quadrature::toString() {
   string << "\n\tpolar weights = ";
   if (_polar_weights != NULL) {
     for (int a = 0; a < _num_azim/4; a++) {
-      for (int p = 0; p < _num_polar/2; p)
+      for (int p = 0; p < _num_polar/2; p++)
         string << " (" << a << "," << p << "): " << _polar_weights[a][p] << ", ";
     }
   }
@@ -809,7 +809,7 @@ std::string Quadrature::toString() {
   string << "\n\tsin thetas = ";
   if (_sin_thetas != NULL) {
     for (int a = 0; a < _num_azim/4; a++) {
-      for (int p = 0; p < _num_polar/2; p)
+      for (int p = 0; p < _num_polar/2; p++)
         string << " (" << a << "," << p << "): " << _sin_thetas[a][p] << ", ";
     }
   }
@@ -817,7 +817,7 @@ std::string Quadrature::toString() {
   string << "\n\ttotal weights = ";
   if (_total_weights != NULL) {
     for (int a = 0; a < _num_azim/4; a++) {
-      for (int p = 0; p < _num_polar/2; p)
+      for (int p = 0; p < _num_polar/2; p++)
         string << " (" << a << "," << p << "): " << _total_weights[a][p] << ", ";
     }
   }
