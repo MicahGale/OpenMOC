@@ -2,7 +2,7 @@
 The setup script for OpenMOC
 '''
 
-import os, sys, string
+import os, shutil, site, string, sys
 from distutils.errors import DistutilsOptionError
 import distutils.ccompiler
 import multiprocessing
@@ -58,11 +58,14 @@ class custom_install(install):
 
   # The user options for a customized OpenMOC build
   user_options = [
-    ('cc=', None, "Compiler (gcc, icpc, or bgxlc) for main openmoc module"),
+    ('cc=', None, "Compiler (gcc, icpc, bgxlc, mpicc) for main openmoc module"),
     ('fp=', None, "Floating point precision (single or double) for " + \
                   "main openmoc module"),
+    ('ng=', None, "Specify number of groups (optional only for optimization)" + \
+                  " for main openmoc module"),
     ('with-cuda', None, "Build openmoc.cuda module for NVIDIA GPUs"),
     ('debug-mode', None, "Build with debugging symbols"),
+    ('sanitizer-mode', None, "Build with address sanitizer"),
     ('profile-mode', None, "Build with profiling symbols"),
     ('coverage-mode', None, "Build with coverage symbols"),
     ('with-ccache', None, "Build with ccache for rapid recompilation"),
@@ -74,6 +77,7 @@ class custom_install(install):
 
   # Set some compile options to be boolean switches
   boolean_options = ['debug-mode',
+                     'sanitizer-mode',
                      'profile-mode',
                      'coverage-mode',
                      'with-ccache']
@@ -100,13 +104,21 @@ class custom_install(install):
     # Default compiler and precision level for the main openmoc module
     self.cc = 'gcc'
     self.fp = 'single'
+    self.ng = None
 
     # Set defaults for each of the newly defined compile time options
     self.with_cuda = False
     self.debug_mode = False
+    self.sanitizer_mode = False
     self.profile_mode = False
     self.coverage_mode = False
     self.with_ccache = False
+
+    # Check that swig is installed:
+    swigLocation = shutil.which('swig')
+    if not swigLocation:
+        print("-> Please install swig before building <-")
+        sys.exit()
 
 
   def finalize_options(self):
@@ -125,17 +137,19 @@ class custom_install(install):
 
     # Set the configuration options specified to be the default
     # unless the corresponding flag was invoked by the user
+    config.num_groups = self.ng
     config.with_cuda = self.with_cuda
     config.debug_mode = self.debug_mode
+    config.sanitizer_mode = self.sanitizer_mode
     config.profile_mode = self.profile_mode
     config.coverage_mode = self.coverage_mode
     config.with_ccache = self.with_ccache
 
     # Check that the user specified a supported C++ compiler
-    if self.cc not in ['gcc', 'clang', 'icpc', 'bgxlc']:
+    if self.cc not in ['gcc', 'clang', 'icpc', 'bgxlc', 'mpicc']:
       raise DistutilsOptionError \
             ('Must supply the -cc flag with one of the supported ' +
-             'C++ compilers: gcc, clang, icpc, bgxlc')
+             'C++ compilers: gcc, clang, icpc, bgxlc, mpicc')
     else:
       config.cc = self.cc
 
@@ -182,6 +196,17 @@ def customize_compiler(self):
         self.set_executable('compiler_so', 'gcc')
 
       postargs = config.compiler_flags['gcc']
+
+    # If compiler is GNU's gcc and the source is C++, use gcc
+    elif config.cc == 'mpicc' and os.path.splitext(src)[1] == '.cpp':
+      if config.with_ccache:
+        self.set_executable('compiler_so', 'ccache mpicc')
+      else:
+        self.set_executable('compiler_so', 'mpicc')
+
+      postargs = config.compiler_flags['mpicc']
+
+
 
     # If compiler is Apple's clang and the source is C++, use clang
     elif config.cc == 'clang' and os.path.splitext(src)[1] == '.cpp':
@@ -266,6 +291,10 @@ def customize_linker(self):
       self.set_executable('linker_so', 'gcc')
       self.set_executable('linker_exe', 'gcc')
 
+    elif config.cc == 'mpicc':
+      self.set_executable('linker_so', 'mpicc')
+      self.set_executable('linker_exe', 'mpicc')
+
     elif config.cc == 'clang':
       self.set_executable('linker_so', 'clang')
       self.set_executable('linker_exe', 'clang')
@@ -317,7 +346,7 @@ def parallel_compile(self, sources, output_dir=None, macros=None,
       self._compile(obj, src, ext, cc_args, extra_postargs, pp_opts)
 
   # Convert thread mapping to C/C++/CUDA objects to a list and return
-  list(pool.ThreadPool(num_cpus).imap(_single_compile, objects))
+  list(pool.ThreadPool(num_cpus).map(_single_compile, objects))
   return objects
 
 
@@ -343,7 +372,7 @@ class custom_build_ext(build_ext):
     swig_flags = config.swig_flags + ['-D' + config.cc.upper()]
 
     os.system('swig {0} -o '.format(str.join(' ', swig_flags)) + \
-              'openmoc/openmoc_wrap.cpp openmoc/openmoc.i')
+              'openmoc/swig/openmoc_wrap.cpp openmoc/swig/openmoc.i')
 
     if config.with_cuda:
       swig_flags = config.swig_flags + ['-DNVCC']
@@ -351,16 +380,19 @@ class custom_build_ext(build_ext):
                 'openmoc/cuda/openmoc_cuda_wrap.cpp ' + \
                 'openmoc/cuda/openmoc_cuda.i')
 
+    # Move openmoc.py file created by swig into main python API folder
+    os.system('mv openmoc/swig/openmoc.py openmoc/openmoc.py')
+
     build_ext.build_extensions(self)
 
 
 # Run the distutils setup method for the complete build
 dist = setup(name = 'openmoc',
-      version = '0.1.4b',
+      version = '0.4.0',
       description = 'An open source method of characteristics code for ' + \
                     'solving the 2D neutron distribution in nuclear reactors',
       url = 'https://github.com/mit-crpg/OpenMOC',
-      download_url = 'https://github.com/mit-crpg/OpenMOC/tarball/v0.1.4b',
+      download_url = 'https://github.com/mit-crpg/OpenMOC/tarball/v0.4.0',
 
       # Set the C/C++/CUDA extension modules built in setup_extension_modules()
       # in config.py based on the user-defined flags at compile time
@@ -380,7 +412,18 @@ dist = setup(name = 'openmoc',
 
 # Rerun the build_py to setup links for C++ extension modules created by SWIG
 # This prevents us from having to install twice
-if "build" in sys.argv or "install" in sys.argv:
-    build_py = build_py(dist)
-    build_py.ensure_finalized()
-    build_py.run()
+build_py = build_py(dist)
+build_py.ensure_finalized()
+build_py.run()
+
+# Remove the shared library in the site packages
+if "clean" in sys.argv:
+    install_location = site.getsitepackages()[0]
+    print("Removing build from "+ install_location)
+    os.system("rm -rf " + install_location + "/*openmoc*")
+    install_location = site.getusersitepackages()
+    print("Removing build from "+ install_location)
+    os.system("rm -rf " + install_location + "/*openmoc*")
+    install_location = "./tests/"
+    print("Removing build from "+ install_location)
+    os.system("rm -rf "+install_location+"openmoc "+install_location+"build")
