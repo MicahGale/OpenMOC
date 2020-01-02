@@ -1160,6 +1160,12 @@ void TrackGenerator::initializeTracks() {
 
   /* Set the flag indicating 2D tracks have been generated */
   _contains_2D_tracks = true;
+  
+  /* Initialize the track reflections */
+  TrackGenerator::initializeTrackReflections();
+
+  /* Initialize the 1D array of Tracks for all Tracks */
+  initializeTracksArray();
 }
 
 /**
