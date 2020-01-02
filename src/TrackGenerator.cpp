@@ -516,7 +516,6 @@ void TrackGenerator::setNumAzim(int num_azim) {
                "the TrackGenerator since it is not a product of 4 and an odd "
                "number.", 
                num_azim);
-  _num_azim_2 = num_azim/2;
   _num_azim = num_azim;
   resetStatus();
 }
@@ -968,17 +967,24 @@ void TrackGenerator::initializeTracks() {
 
   log_printf(NORMAL, "Initializing 2D tracks...");
 
+  /* Allocate memory for arrays */
+  _tracks_2D        = new Track*[_num_azim/2]; //TODO deal with _tracks_2D_array
+  _num_x            = new int[_num_azim/2];
+  _num_y            = new int[_num_azim/2];
+  _tracks_per_azim  = new long[_num_azim/2]; //TODO deal with
+  _num_2D_tracks    = 0;
+  
+  double* dx_eff = new double[_num_azim/2];
+  double* dy_eff = new double[_num_azim/2];
+  double* d_eff = new double[_num_azim/2];
   double width = _geometry->getWidthX();
   double height = _geometry->getWidthY();
-
-  /* Create array for storing potential solutions to test */
-  int len_test_arrays = 21;
-  double* penalties = new double[len_test_arrays];
-  int* test_nx = new int[len_test_arrays];
-  int* test_ny = new int[len_test_arrays];
+  double x_min = _geometry->getMinX();
+  double y_min = _geometry->getMinY();
   
   double x1, 
-	x2, 
+	x2,
+        goal_phi,	
 	min_penalty,  
 	nx, 
 	ny, 
@@ -1001,7 +1007,9 @@ void TrackGenerator::initializeTracks() {
       prev_j, 
       prev_k, 
       new_angle_pntr, 
-      middle, 
+      middle,
+      step_nx,
+      step_ny, 
       x, 
       y;
  
@@ -1009,23 +1017,22 @@ void TrackGenerator::initializeTracks() {
   
   this -> calculatePenaltyParabola();
   
-  middle = (int) (_num_azim_2/4);
+  middle = (int) (_num_azim/8);
   phi = _quadrature->getPhi(middle);
-  dx_eff[middle] = width_x / _num_x[middle];
-  dy_eff[middle] = width_y / _num_y[middle];
+  dx_eff[middle] = width / _num_x[middle];
+  dy_eff[middle] = height / _num_y[middle];
   d_eff[middle] = dx_eff[middle] * sin(phi);
   _quadrature->setAzimSpacing(d_eff[middle], middle);
 
   /* Set attributes for complimentary angles */
-  _num_x[_num_azim_2-middle-1] = _num_x[middle];
-  _num_y[_num_azim_2-middle-1] = _num_y[middle];
-  _num_tracks[_num_azim_2-middle-1] = _num_tracks[middle];
-  dx_eff[_num_azim_2-middle-1] = dx_eff[middle];
-  dy_eff[_num_azim_2-middle-1] = dy_eff[middle];
-  d_eff[_num_azim_2-middle-1] = d_eff[middle];
+  _num_x[_num_azim/2-middle-1] = _num_x[middle];
+  _num_y[_num_azim/2-middle-1] = _num_y[middle];
+  dx_eff[_num_azim/2-middle-1] = dx_eff[middle];
+  dy_eff[_num_azim/2-middle-1] = dy_eff[middle];
+  d_eff[_num_azim/2-middle-1] = d_eff[middle];
  
   /* Calculates the ideal width between angles */
-  target_w = M_PI / _num_azim_2;
+  target_w = M_PI / _num_azim/2;
   
   step_nx = (int) ((_num_x[middle] /  M_PI) * target_w);
   step_ny = (int) ((_num_y[middle] /  M_PI) * target_w);
@@ -1050,11 +1057,11 @@ void TrackGenerator::initializeTracks() {
       } else {
         i++;
       }
-      if (!((up_down == 0 && i >= 0) || (up_down == 1 && i < _num_azim_2 / 2))) 
+      if (!((up_down == 0 && i >= 0) || (up_down == 1 && i < _num_azim / 4))) 
         break;
       
       penalties.clear();
-      goal_phi = M_PI / _num_azim_2 * (0.5  + i);
+      goal_phi = M_PI / _num_azim * ((0.5  + i)/2);
       
       this -> binarySearchForNextAngle(penalties, prev_nx, prev_ny, goal_phi,
           step_nx, step_ny, i, up_down == 1);
@@ -1062,90 +1069,87 @@ void TrackGenerator::initializeTracks() {
       prev_ny = _num_y[i];
       phi = _quadrature->getPhi(i);
       /* Effective Track spacing (not spacing we desire, but close) */
-      dx_eff[i] = width_x / _num_x[i];
-      dy_eff[i] = width_y / _num_y[i];
+      dx_eff[i] = width / _num_x[i];
+      dy_eff[i] = height / _num_y[i];
       d_eff[i] = dx_eff[i] * sin(phi);
       _quadrature->setAzimSpacing(d_eff[i], i);
 
       /* Set attributes for complimentary angles */
-      _num_x[_num_azim_2-i-1] = _num_x[i];
-      _num_y[_num_azim_2-i-1] = _num_y[i];
+      _num_x[_num_azim/2-i-1] = _num_x[i];
+      _num_y[_num_azim/2-i-1] = _num_y[i];
       
       /* Extend the number of intersections with x,y axes for modules */
-      _num_x[_num_azim_2-i-1] *= _geometry->getNumXModules();
-      _num_y[_num_azim_2-i-1] *= _geometry->getNumYModules();
+      _num_x[_num_azim/2-i-1] *= _geometry->getNumXModules();
+      _num_y[_num_azim/2-i-1] *= _geometry->getNumYModules();
       
-      _num_tracks[_num_azim_2-i-1] = _num_tracks[i];
-      dx_eff[_num_azim_2-i-1] = dx_eff[i];
-      dy_eff[_num_azim_2-i-1] = dy_eff[i];
-      d_eff[_num_azim_2-i-1] = d_eff[i];
+      dx_eff[_num_azim/2-i-1] = dx_eff[i];
+      dy_eff[_num_azim/2-i-1] = dy_eff[i];
+      d_eff[_num_azim/2-i-1] = d_eff[i];
     }
   }
   log_printf(INFO, "Generating Track start and end points...");
 
   /* Compute Track starting and end points */
-  for (int i = 0; i < _num_azim_2; i++) {
+  for (int i = 0; i < _num_azim/2; i++) {
 
     /* Extract the azimuthal angle */
     double phi = _quadrature->getPhi(i);
     
-    /* Tracks for azimuthal angle i */
-    _tracks[i] = new Track[_num_tracks[i]];
+    /* Allocate memory for the 2D tracks array */
+    _tracks_2D[i] = new Track[_num_x[i] + _num_y[i]];
+    _num_2D_tracks += _num_x[i] + _num_y[i];
 
     /* Compute start points for Tracks starting on x-axis */
     for (int j = 0; j < _num_x[i]; j++) {
-      if (i < _num_azim_2 / 2)
-        _tracks[i][j].getStart()->setCoords(
+      if (i < _num_azim / 4)
+        _tracks_2D[i][j].getStart()->setCoords(
             dx_eff[i] * (_num_x[i] - j - 0.5), 0, _z_coord);
       else
-        _tracks[i][j].getStart()->setCoords(dx_eff[i] * (0.5 + j), 0, _z_coord);
+        _tracks_2D[i][j].getStart()->setCoords(dx_eff[i] * (0.5 + j), 0, _z_coord);
     }
-    /* Allocate memory for the 2D tracks array */
-    _tracks_2D[a] = new Track[_num_x[a] + _num_y[a]];
-    _num_2D_tracks += _num_x[a] + _num_y[a];
 
     /* Get the azimuthal angle for all tracks with this azimuthal angle */
-    phi = _quadrature->getPhi(a);
+    phi = _quadrature->getPhi(i);
 
-    for (int i=0; i < _num_x[a] + _num_y[a]; i++) {
+    for (int j=0; j < _num_x[i] + _num_y[i]; j++) {
 
       /* Get track and set angle and track indices */
-      Track* track = &_tracks_2D[a][i];
+      Track* track = &_tracks_2D[i][j];
       track->setPhi(phi);
-      track->setAzimIndex(a);
-      track->setXYIndex(i);
+      track->setAzimIndex(i);
+      track->setXYIndex(j);
 
       /* Set start point */
-      if (a < _num_azim/4) {
-        if (i < _num_x[a])
-          track->getStart()->setCoords(x_min + width - dx_eff[a] * (i + 0.5),
+      if (i < _num_azim/4) {
+        if (j < _num_x[i])
+          track->getStart()->setCoords(x_min + width - dx_eff[i] * (j + 0.5),
                                        y_min);
         else
-          track->getStart()->setCoords(x_min, y_min + dy_eff[a] *
-                                       (i - _num_x[a] + 0.5));
+          track->getStart()->setCoords(x_min, y_min + dy_eff[i] *
+                                       (j - _num_x[i] + 0.5));
       }
       else {
-        if (i < _num_x[a])
-          track->getStart()->setCoords(x_min + dx_eff[a] * (i + 0.5), y_min);
+        if (j < _num_x[i])
+          track->getStart()->setCoords(x_min + dx_eff[i] * (j + 0.5), y_min);
         else
-          track->getStart()->setCoords(x_min + width, y_min + dy_eff[a] *
-                                       (i-_num_x[a] + 0.5));
+          track->getStart()->setCoords(x_min + width, y_min + dy_eff[i] *
+                                       (j -_num_x[i] + 0.5));
       }
 
       /* Set end point */
-      if (a < _num_azim/4) {
-        if (i < _num_y[a])
-          track->getEnd()->setCoords(x_min + width, y_min + dy_eff[a] *
-                                     (i + 0.5));
+      if (i < _num_azim/4) {
+        if (j < _num_y[i])
+          track->getEnd()->setCoords(x_min + width, y_min + dy_eff[i] *
+                                     (j + 0.5));
         else
-          track->getEnd()->setCoords(x_min + width - dx_eff[a] * ((i-_num_y[a])
+          track->getEnd()->setCoords(x_min + width - dx_eff[i] * ((j -_num_y[i])
                                      + 0.5), y_min + height);
       }
       else {
-        if (i < _num_y[a])
-          track->getEnd()->setCoords(x_min, y_min + dy_eff[a] * (i + 0.5));
+        if (j < _num_y[i])
+          track->getEnd()->setCoords(x_min, y_min + dy_eff[i] * (j + 0.5));
         else
-          track->getEnd()->setCoords(x_min + dx_eff[a] * (i-_num_y[a] + 0.5),
+          track->getEnd()->setCoords(x_min + dx_eff[i] * (j -_num_y[i] + 0.5),
                                      y_min + height);
       }
     }
@@ -1183,11 +1187,11 @@ void TrackGenerator::binarySearchForNextAngle(std::map<int,double> &penalties,
 
   int j, k, l, nx, ny, min_key, step_k, step_l, start_k, start_l;
   double min_penal, new_ratio, penalty, prev_ratio, phi, tsx, tsy, 
-         width_x, width_y;
+         width, height;
   
   prev_ratio = (double) start_ny / (double) start_nx;
-  width_x = _geometry -> getWidthX();
-  width_y = _geometry -> getWidthY();
+  width = _geometry -> getWidthX();
+  height = _geometry -> getWidthY();
   if (upDown) {
     step_k = step_nx;
     step_l = step_ny;
@@ -1218,8 +1222,8 @@ void TrackGenerator::binarySearchForNextAngle(std::map<int,double> &penalties,
         ny = k;
       }
       /* Verify that this angle is shallower than previous angle */
-      tsx = width_x / nx;
-      tsy = width_y / ny;
+      tsx = width / nx;
+      tsy = height / ny;
       
       new_ratio = (double) ny / (double) nx;
       if ((!upDown && new_ratio > prev_ratio) ||
@@ -1227,10 +1231,10 @@ void TrackGenerator::binarySearchForNextAngle(std::map<int,double> &penalties,
         /* Verify that we haven't done the math for this combination yet */
         if (penalties.find(nx * HASH_SPACING + ny) == penalties.end()) { 
           /*Calculate the angle from nx and ny */
-          tsx = width_x / nx;
-          tsy = width_y / ny;
+          tsx = width / nx;
+          tsy = height / ny;
           if ((tsx * tsy) / sqrt(pow(tsx,2.0)+ pow(tsy,2.0)) <= _azim_spacing) {
-            phi = atan((width_y * nx) / (width_x * ny));
+            phi = atan((height * nx) / (width * ny));
             penalty = this -> calcPenalty(nx, ny, phi, goalPhi);       
             /* Save the penalty to the map in a way that:
              *      nx and ny can be retrieved */
@@ -1277,8 +1281,7 @@ void TrackGenerator::binarySearchForNextAngle(std::map<int,double> &penalties,
   } else {
     _num_x[i] = nx;
     _num_y[i] = ny;
-    _num_tracks[i] = nx + ny;
-    phi = atan((width_y * nx) / (width_x *ny));
+    phi = atan((height * nx) / (width *ny));
     _quadrature->setPhi(phi, i);
   }
 }
@@ -1309,30 +1312,28 @@ void TrackGenerator::calculatePenaltyParabola() {
   tsy = tsx;
   
   /* finds the index for the 45 deg angle */
-  middle = (int) (_num_azim_2/4);
+  middle = (int) (_num_azim/8);
   _num_x[middle] = (int) ceil(_geometry->getWidthX() / tsx);
   _num_y[middle] = (int) ceil(_geometry->getWidthY() / tsy);
 
   /* saves middle angle track numbers */
-  _num_tracks[middle] = _num_x[middle] + _num_y[middle];
-  _goal_interp_y[1] = _num_tracks[middle];
+  _goal_interp_y[1] = _num_x[middle] + _num_y[middle];
   _goal_interp_x[1] = atan(tsy/tsx);
   _quadrature->setPhi(_goal_interp_x[1],middle);
 
   phi = _quadrature->getPhi(middle);
 
   /* Set attributes for complimentary angles */
-  _num_x[_num_azim_2-middle-1] = _num_x[middle];
-  _num_y[_num_azim_2-middle-1] = _num_y[middle];
-  _num_tracks[_num_azim_2-middle-1] = _num_tracks[middle];
+  _num_x[_num_azim/2-middle-1] = _num_x[middle];
+  _num_y[_num_azim/2-middle-1] = _num_y[middle];
   /* calculates the shallowest and steepest reasonable angle*/
-  double angle_multi[] = {0.5, _num_azim_2/2-0.5};
+  double angle_multi[] = {0.5, _num_azim/2/2-0.5};
   int interp_pointers[] = {0, 2};
   
   for (int i = 0; i< 2; i++) {
-    phi = M_PI/_num_azim_2 * angle_multi[i];
-    nx = (int) (fabs(width_x / _azim_spacing * sin(phi))) + 1;
-    ny = (int) (fabs(width_y / _azim_spacing * cos(phi))) + 1;
+    phi = M_PI/_num_azim/2 * angle_multi[i];
+    nx = (int) (fabs(width / _azim_spacing * sin(phi))) + 1;
+    ny = (int) (fabs(height / _azim_spacing * cos(phi))) + 1;
     
     _goal_interp_y[interp_pointers[i]] = nx + ny;
     /* Squash the angle into being cyclic */
@@ -1373,7 +1374,7 @@ double TrackGenerator::calcPenalty(int nx, int ny, double phi, double goalPhi) {
          fb*((phi-c)*(phi-a))/((b-c)*(b-a)) + 
          fc*((phi-a)*(phi-b))/((c-a)*(c-b));
 
-  phi_penalty = fabs(phi-goalPhi) / (M_PI / _num_azim_2);
+  phi_penalty = fabs(phi-goalPhi) / (M_PI / _num_azim/2);
   
   return (num_tracks-goal)/goal * TRACK_WEIGHT + phi_penalty * PHI_WEIGHT; 
 }

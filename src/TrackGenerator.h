@@ -192,7 +192,7 @@ public:
   int getNumX(int azim);
   int getNumY(int azim);
   void exportFSRVolumes(double* out_volumes, int num_fsrs);
-  void initializeVolumes();
+  //void initializeVolumes();
   void initializeFSRVolumesBuffer();
   FP_PRECISION* getFSRVolumesBuffer();
   FP_PRECISION* getFSRVolumes();
@@ -229,7 +229,7 @@ public:
   double leastCommonMultiple(double a, double b);
   void dumpSegmentsToFile();
   bool readSegmentsFromFile();
-  void initializeTrackFileDirectory();
+  //void initializeTrackFileDirectory();
   void initializeTracksArray();
   virtual void checkBoundaryConditions();
 
